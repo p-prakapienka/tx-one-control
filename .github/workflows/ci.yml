@@ -1,0 +1,180 @@
+name: CI
+
+# Every branch is built, not just main: the debug APK artifact uploaded by the `android` job
+# is how builds get onto a phone (and how agents whose sandbox can't reach Google's Maven
+# verify their work). A PR's checks come from the push run on its head commit, so there is no
+# separate pull_request trigger producing a duplicate run and a duplicate APK.
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # A newer push to the same branch supersedes the old run; main keeps every run.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Required status checks ("protocol", "android") can't be scoped by the pull_request
+      # trigger's own `paths:` filter — GitHub leaves a PR permanently "pending" if a required
+      # check's workflow never runs at all. Instead the workflow always runs, and this job
+      # decides whether the build jobs below have anything to do; a job skipped via `if:` is
+      # reported to branch protection as a passing required check, so a docs-only PR clears
+      # "protocol"/"android" without ever invoking Gradle.
+      #
+      # Deny-list, not allow-list: a new source directory (a future `:widgets` module, say)
+      # must trigger CI without anyone remembering to add it to a filter first. So this only
+      # skips CI for a fixed set of known-non-code paths; anything unrecognized falls through
+      # to the `*)` case and forces code=true. Fails toward "run the build," never toward
+      # "silently skip it."
+      - id: filter
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] && [ -n "${{ github.event.before }}" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
+            RANGE="${{ github.event.before }}..${{ github.sha }}"
+          else
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CHANGED=$(git diff --name-only $RANGE)
+          echo "Changed files:"
+          echo "$CHANGED"
+
+          CODE=false
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            case "$f" in
+              docs/*|metadata/*|LICENSES/*|*.md|LICENSE|.gitattributes|.gitignore) ;;
+              *) CODE=true ;;
+            esac
+          done <<< "$CHANGED"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+
+  protocol:
+    name: protocol
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ANDROID_HOME: ''
+      ANDROID_SDK_ROOT: ''
+    steps:
+      - uses: actions/checkout@v4
+
+      # Enforcement, not decoration: ubuntu-latest ships an Android SDK, so this job has to
+      # actively remove it for :protocol's SDK-free guarantee (#15) to be tested. Merely omitting
+      # an SDK setup step proves nothing on a runner that already has one sitting at
+      # /usr/local/lib/android with ANDROID_HOME pre-set.
+      - run: sudo mv /usr/local/lib/android /usr/local/lib/android.hidden || true
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - run: chmod +x gradlew
+
+      # --no-daemon: a Gradle daemon is reused across invocations and a build reads the
+      # *daemon's* environment, not the client's — so unsetting ANDROID_HOME/ANDROID_SDK_ROOT for
+      # this one step is not reliable if an earlier step already warmed a daemon. This job is
+      # ~20s of work; the daemon buys nothing here. If a future AGP makes configuration itself
+      # demand the SDK, the fix is NOT to add an SDK to this job — it's to make :protocol
+      # resolvable standalone (composite build / --configure-on-demand).
+      - run: env -u ANDROID_HOME -u ANDROID_SDK_ROOT ./gradlew :protocol:test --no-daemon --stacktrace
+
+  android:
+    name: android
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'   # 21, not 17 — see app/build.gradle.kts jvmToolchain(21)
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - run: chmod +x gradlew
+
+      # Android only installs an APK over an existing app if both are signed with the same key.
+      # AGP signs debug builds with ~/.android/debug.keystore and generates a fresh one when it
+      # is missing, so without this step every CI run has a different signature and each build
+      # must be uninstalled before the next one installs. The keystore is a repo secret, never
+      # committed (this repo is public and .gitignore excludes *.keystore). See AGENTS.md for
+      # how to create it.
+      - name: Install stable debug keystore (optional)
+        env:
+          DEBUG_KEYSTORE_BASE64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$DEBUG_KEYSTORE_BASE64" ]; then
+            mkdir -p "$HOME/.android"
+            echo "$DEBUG_KEYSTORE_BASE64" | base64 -d > "$HOME/.android/debug.keystore"
+            echo "Using the stable debug keystore from DEBUG_KEYSTORE_BASE64."
+          else
+            echo "::notice::DEBUG_KEYSTORE_BASE64 is not set: this APK is signed with a throwaway debug key, so uninstall the previous build before installing it."
+          fi
+
+      # No explicit `sdkmanager` step: AGP 8.13.x auto-downloads the missing compileSdk 36
+      # platform/build-tools at build time as long as SDK licences are already accepted, which
+      # GitHub's Android-ready ubuntu-latest image does by default. Add an explicit sdkmanager
+      # step here only if this step's build log shows that auto-download failing.
+      #
+      # --continue: run lint and tests both to completion so one failing doesn't mask the other.
+      - run: ./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug --continue --stacktrace
+
+      # Uploaded even when tests or lint fail (the job itself still goes red), so a build with a
+      # lint finding can still be tried on the phone. Missing APK = assembleDebug itself failed.
+      - name: Upload debug APK
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-apk-${{ github.run_number }}
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload lint and test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports-${{ github.run_number }}
+          path: |
+            app/build/reports/lint-results-debug.*
+            app/build/reports/tests/
+            app/build/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Summary
+        if: success() || failure()
+        run: |
+          {
+            echo "### Debug APK"
+            if ls app/build/outputs/apk/debug/*.apk >/dev/null 2>&1; then
+              echo "Built from \`${GITHUB_SHA::7}\` on \`${GITHUB_REF_NAME}\`. Download **debug-apk-${{ github.run_number }}** from the Artifacts section below and unzip it to get \`app-debug.apk\`."
+            else
+              echo "No APK: \`:app:assembleDebug\` failed. See the build log."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,345 @@
+@file:OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+
+package dev.tonexotg.protocol.connection
+
+import dev.tonexotg.protocol.ConnectionState
+import dev.tonexotg.protocol.ParameterId
+import dev.tonexotg.protocol.PresetIndex
+import dev.tonexotg.protocol.PresetSlot
+import dev.tonexotg.protocol.TonexError
+import dev.tonexotg.protocol.TonexResult
+import dev.tonexotg.protocol.message.FirmwareCapabilities
+import dev.tonexotg.protocol.message.MasterVolumeMessage
+import dev.tonexotg.protocol.message.SingleParameterPayload
+import dev.tonexotg.protocol.message.SingleParameterPayloadCodec
+import dev.tonexotg.protocol.params.ParameterRegistry
+import kotlinx.coroutines.async
+import kotlinx.coroutines.test.runTest
+import kotlin.math.abs
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertTrue
+
+/**
+ * Step 9 of the S9 build order: `setParameter()` (§10.1) and `revertActivePreset()` (§10.2 — S9's
+ * deliberate stopping point; see issue #14 / S9b for what comes next). Production code landed as
+ * part of step 5.
+ */
+class DefaultTonexControllerSetParameterTest {
+
+    /** A PRESET-scoped parameter: NOISE_GATE_THRESHOLD, range -100..0 dB. */
+    private val presetParam = requireNotNull(ParameterRegistry.byIndex(2))
+
+    /** A GLOBAL parameter other than master volume: BPM, range 40..240. */
+    private val bpmParam = requireNotNull(ParameterRegistry.byIndex(110))
+
+    private val masterVolumeSpec = requireNotNull(ParameterRegistry.byEnumName("MASTER_VOLUME"))
+
+    // ---- rejected before Ready ------------------------------------------------------------------
+
+    @Test
+    fun `setParameter before Ready is rejected with ProtocolStateViolation`() = runTest {
+        val fake = FakeTonexTransport()
+        val controller = DefaultTonexController(scope = backgroundScope, capabilities = FirmwareCapabilities.NONE_CONFIRMED)
+
+        val result = controller.setParameter(presetParam.id, 0f)
+
+        val error = (result as TonexResult.Failure).error
+        assertIs<TonexError.ProtocolStateViolation>(error)
+        assertEquals(ConnectionState.Idle, (error as TonexError.ProtocolStateViolation).state)
+    }
+
+    @Test
+    fun `revertActivePreset before Ready is rejected with ProtocolStateViolation`() = runTest {
+        val fake = FakeTonexTransport()
+        val controller = DefaultTonexController(scope = backgroundScope, capabilities = FirmwareCapabilities.NONE_CONFIRMED)
+
+        val result = controller.revertActivePreset()
+
+        assertIs<TonexError.ProtocolStateViolation>((result as TonexResult.Failure).error)
+    }
+
+    // ---- range rejection --------------------------------------------------------------------
+
+    @Test
+    fun `a value above max is rejected with ParameterValueOutOfRange, no write issued`() = runTest {
+        val fake = FakeTonexTransport()
+        val controller = DefaultTonexController(
+            scope = backgroundScope,
+            capabilities = FirmwareCapabilities(supportsSingleParameterWrite = true),
+        )
+        connectToReady(controller, fake)
+        val writesBefore = fake.writtenMessages().size
+
+        val result = controller.setParameter(presetParam.id, presetParam.max + 0.1f)
+
+        val error = (result as TonexResult.Failure).error
+        assertIs<TonexError.ParameterValueOutOfRange>(error)
+        assertEquals(fake.writtenMessages().size, writesBefore, "no write should be issued for an out-of-range value")
+    }
+
+    @Test
+    fun `an out-of-range BPM value is rejected before any re-read is issued - issue 83`() = runTest {
+        val fake = FakeTonexTransport()
+        val controller = DefaultTonexController(
+            scope = backgroundScope,
+            capabilities = FirmwareCapabilities(supportsSingleParameterWrite = true),
+        )
+        connectToReady(controller, fake)
+        val writesBefore = fake.writtenMessages().size
+
+        val result = controller.setParameter(bpmParam.id, bpmParam.max + 1f)
+
+        val error = (result as TonexResult.Failure).error
+        assertIs<TonexError.ParameterValueOutOfRange>(error)
+        assertEquals(
+            fake.writtenMessages().size,
+            writesBefore,
+            "no re-read or write should be issued for an out-of-range global-parameter value",
+        )
+    }
+
+    @Test
+    fun `a value below min is rejected with ParameterValueOutOfRange`() = runTest {
+        val fake = FakeTonexTransport()
+        val controller = DefaultTonexController(
+            scope = backgroundScope,
+            capabilities = FirmwareCapabilities(supportsSingleParameterWrite = true),
+        )
+        connectToReady(controller, fake)
+
+        val result = controller.setParameter(presetParam.id, presetParam.min - 0.1f)
+
+        assertIs<TonexError.ParameterValueOutOfRange>((result as TonexResult.Failure).error)
+    }
+
+    @Test
+    fun `boundary values min and max exactly are accepted`() = runTest {
+        val fake = FakeTonexTransport()
+        val controller = DefaultTonexController(
+            scope = backgroundScope,
+            capabilities = FirmwareCapabilities(supportsSingleParameterWrite = true),
+        )
+        connectToReady(controller, fake)
+
+        assertIs<TonexResult.Success<Unit>>(controller.setParameter(presetParam.id, presetParam.min))
+        assertIs<TonexResult.Success<Unit>>(controller.setParameter(presetParam.id, presetParam.max))
+    }
+
+    // ---- capability gate --------------------------------------------------------------------
+
+    @Test
+    fun `setParameter on a preset parameter with NONE_CONFIRMED fails UnsupportedByFirmware single-parameter-write`() = runTest {
+        val fake = FakeTonexTransport()
+        val controller = DefaultTonexController(scope = backgroundScope, capabilities = FirmwareCapabilities.NONE_CONFIRMED)
+        connectToReady(controller, fake)
+
+        val result = controller.setParameter(presetParam.id, presetParam.min)
+
+        val error = (result as TonexResult.Failure).error
+        assertIs<TonexError.UnsupportedByFirmware>(error)
+        assertEquals("single-parameter-write", (error as TonexError.UnsupportedByFirmware).operation)
+    }
+
+    @Test
+    fun `setParameter on master volume with NONE_CONFIRMED fails UnsupportedByFirmware master-volume-write`() = runTest {
+        val fake = FakeTonexTransport()
+        val controller = DefaultTonexController(scope = backgroundScope, capabilities = FirmwareCapabilities.NONE_CONFIRMED)
+        connectToReady(controller, fake)
+
+        val result = controller.setParameter(masterVolumeSpec.id, 0f)
+
+        val error = (result as TonexResult.Failure).error
+        assertIs<TonexError.UnsupportedByFirmware>(error)
+        assertEquals("master-volume-write", (error as TonexError.UnsupportedByFirmware).operation)
+    }
+
+    // ---- routing: PRESET vs MASTER_VOLUME vs other GLOBAL -------------------------------------
+
+    @Test
+    fun `a PRESET-scoped id produces a KIND_PARAMETER payload`() = runTest {
+        val fake = FakeTonexTransport()
+        val controller = DefaultTonexController(
+            scope = backgroundScope,
+            capabilities = FirmwareCapabilities(supportsSingleParameterWrite = true),
+        )
+        connectToReady(controller, fake)
+        val writesBefore = fake.writtenMessages().size
+
+        val result = controller.setParameter(presetParam.id, -50f)
+
+        assertIs<TonexResult.Success<Unit>>(result)
+        val written = fake.writtenMessages().drop(writesBefore).single()
+        val payload = SingleParameterPayloadCodec.decode(written.payload)
+        assertIs<TonexResult.Success<SingleParameterPayload>>(payload)
+        assertEquals(SingleParameterPayloadCodec.KIND_PARAMETER, payload.value.kind)
+    }
+
+    @Test
+    fun `MASTER_VOLUME produces a KIND_MASTER_VOLUME payload with index 0 and a native 0 to 10 value`() = runTest {
+        val fake = FakeTonexTransport()
+        val controller = DefaultTonexController(
+            scope = backgroundScope,
+            capabilities = FirmwareCapabilities(supportsSingleParameterWrite = true),
+        )
+        connectToReady(controller, fake)
+        val writesBefore = fake.writtenMessages().size
+
+        val result = controller.setParameter(masterVolumeSpec.id, 0f) // 0 dB -> native ~9.3
+
+        assertIs<TonexResult.Success<Unit>>(result)
+        val written = fake.writtenMessages().drop(writesBefore).single()
+        val payload = SingleParameterPayloadCodec.decode(written.payload)
+        assertIs<TonexResult.Success<SingleParameterPayload>>(payload)
+        assertEquals(SingleParameterPayloadCodec.KIND_MASTER_VOLUME, payload.value.kind)
+        assertEquals(0, payload.value.index)
+        val expectedNative = MasterVolumeMessage.decibelsToNative(0f)
+        assertTrue(abs(payload.value.value - expectedNative) < 1e-3f)
+        assertTrue(payload.value.value in 0f..10f)
+    }
+
+    @Test
+    fun `another global parameter (BPM) re-reads state and issues a whole-state write - issue 83`() = runTest {
+        val fake = FakeTonexTransport()
+        val controller = DefaultTonexController(
+            scope = backgroundScope,
+            capabilities = FirmwareCapabilities(supportsSingleParameterWrite = true),
+        )
+        connectToReady(controller, fake)
+        val writesBefore = fake.writtenMessages().size
+
+        val setDeferred = async { controller.setParameter(bpmParam.id, bpmParam.min) }
+        testScheduler.runCurrent()
+        fake.emitMessage(stateUpdateMessage(plausibleBlob()))
+        testScheduler.runCurrent()
+
+        val result = setDeferred.await()
+        assertIs<TonexResult.Success<Unit>>(result)
+        val newWrites = fake.writtenMessages().drop(writesBefore)
+        assertEquals(2, newWrites.size, "expected [RequestState, SetState]")
+        assertRequestState(newWrites[0])
+        assertStateUpdateWrite(newWrites[1])
+    }
+
+    @Test
+    fun `every registered GLOBAL parameter has a known write path - dispatch table stays exhaustive`() = runTest {
+        // Documents that writeParameterLocked's dispatch is exhaustive over today's registry: the
+        // "no known write path" fallback exists purely as a future-proofing guard (a new GLOBAL
+        // parameter added to the registry without a matching branch here), not a reachable state
+        // today. Footswitch slot assignments remain the only pedal global with no per-parameter
+        // write path at all, and they are not a ParameterRegistry entry to begin with.
+        val globalEnumNames = ParameterRegistry.all()
+            .filter { it.scope == dev.tonexotg.protocol.ParameterScope.GLOBAL }
+            .map { it.enumName }
+            .toSet()
+        assertEquals(
+            setOf("BPM", "INPUT_TRIM", "CABSIM_BYPASS", "TEMPO_SOURCE", "TUNING_REFERENCE", "BYPASS", "MASTER_VOLUME"),
+            globalEnumNames,
+        )
+    }
+
+    // ---- parameterValues updated only after a successful write --------------------------------
+
+    @Test
+    fun `parameterValues is updated only after writeFramed succeeds, with the exact value`() = runTest {
+        val fake = FakeTonexTransport()
+        val controller = DefaultTonexController(
+            scope = backgroundScope,
+            capabilities = FirmwareCapabilities(supportsSingleParameterWrite = true),
+        )
+        connectToReady(controller, fake)
+        // S9b: connect()'s capture pre-populates every PRESET-scoped entry (the snapshotValues()
+        // fixture's value for this index), not absence -- see ConnectionTestFixtures.snapshotValues.
+        val capturedValue = snapshotValues()[presetParam.id.index]
+        assertEquals(capturedValue, controller.parameterValues.value[presetParam.id])
+
+        controller.setParameter(presetParam.id, -25f)
+
+        assertEquals(-25f, controller.parameterValues.value[presetParam.id])
+    }
+
+    @Test
+    fun `parameterValues is unchanged when the write fails`() = runTest {
+        val fake = FakeTonexTransport()
+        val controller = DefaultTonexController(
+            scope = backgroundScope,
+            capabilities = FirmwareCapabilities(supportsSingleParameterWrite = true),
+        )
+        connectToReady(controller, fake)
+        val capturedValue = snapshotValues()[presetParam.id.index]
+        fake.writeThrows = java.io.IOException("wedged")
+
+        val result = controller.setParameter(presetParam.id, -25f)
+
+        assertIs<TonexResult.Failure>(result)
+        // S9b: unchanged means still holding the value connect()'s capture populated, not absent.
+        assertEquals(capturedValue, controller.parameterValues.value[presetParam.id])
+    }
+
+    // ---- revertActivePreset: both non-snapshot failure modes, no throw, no write --------------
+
+    @Test
+    fun `revertActivePreset with capability unconfirmed fails UnsupportedByFirmware, no write`() = runTest {
+        val fake = FakeTonexTransport()
+        val controller = DefaultTonexController(scope = backgroundScope, capabilities = FirmwareCapabilities.NONE_CONFIRMED)
+        connectToReady(controller, fake)
+        val writesBefore = fake.writtenMessages().size
+
+        val result = controller.revertActivePreset()
+
+        val error = (result as TonexResult.Failure).error
+        assertIs<TonexError.UnsupportedByFirmware>(error)
+        assertEquals("revert-active-preset", (error as TonexError.UnsupportedByFirmware).operation)
+        assertEquals(fake.writtenMessages().size, writesBefore)
+    }
+
+    @Test
+    fun `revertActivePreset with capability confirmed but no captured snapshot fails NoSnapshotAvailable, no write`() = runTest {
+        // S9b: revertActivePreset's success path (a snapshot present, replay landing) now lives in
+        // DefaultTonexControllerRevertTest.kt. This test keeps guard 4's own failure mode covered
+        // here -- capture never answered, so no snapshot exists for the active preset.
+        val fake = FakeTonexTransport()
+        val controller = DefaultTonexController(
+            scope = backgroundScope,
+            capabilities = FirmwareCapabilities(supportsSingleParameterWrite = true),
+        )
+        connectToReady(controller, fake, activeSlot = PresetSlot.A, a = 4, b = 1, c = 2, captureValues = null)
+        val writesBefore = fake.writtenMessages().size
+
+        val result = controller.revertActivePreset()
+
+        val error = (result as TonexResult.Failure).error
+        assertIs<TonexError.NoSnapshotAvailable>(error)
+        assertEquals(PresetIndex(4), (error as TonexError.NoSnapshotAvailable).presetIndex)
+        assertEquals(fake.writtenMessages().size, writesBefore, "no snapshot means no write, ever")
+    }
+
+    // ---- shared setup -------------------------------------------------------------------------
+
+    /** `RequestStateMessage`'s outbound envelope type is `0x0000` (Unknown) -- identify it by its
+     * fixed opaque payload literal (`b9 02 81 06 03 0b`) instead. */
+    private fun assertRequestState(msg: dev.tonexotg.protocol.codec.DecodedMessage) {
+        assertEquals(byteArrayOf(0xB9.toByte(), 0x02, 0x81.toByte(), 0x06, 0x03, 0x0B).toList(), msg.payload.toList())
+    }
+
+    /** `SetStateMessage`'s outbound envelope type IS `0x0306` (`MessageType.StateUpdate`). */
+    private fun assertStateUpdateWrite(msg: dev.tonexotg.protocol.codec.DecodedMessage) {
+        assertEquals(dev.tonexotg.protocol.codec.MessageType.StateUpdate, msg.header.type)
+    }
+
+    private suspend fun kotlinx.coroutines.test.TestScope.connectToReady(
+        controller: DefaultTonexController,
+        fake: FakeTonexTransport,
+        activeSlot: PresetSlot = PresetSlot.A,
+        a: Int = 0,
+        b: Int = 1,
+        c: Int = 2,
+        captureValues: FloatArray? = snapshotValues(),
+    ) {
+        val connectDeferred = async { controller.connect(fake) }
+        driveToReady(fake, activeSlot = activeSlot, a = a, b = b, c = c, captureValues = captureValues)
+        val result = connectDeferred.await()
+        assertIs<TonexResult.Success<Unit>>(result)
+    }
+}
