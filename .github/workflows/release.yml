@@ -1,0 +1,93 @@
+name: Release
+
+# #67 MVP: tag push -> signed release APK attached to a GitHub Release.
+# workflow_dispatch exists so a dry run can be triggered on a scratch tag before a real release.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build and release (defaults to the ref that triggered this run)'
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    name: version
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.version.outputs.code }}
+      name: ${{ steps.version.outputs.name }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0   # need full history to count commits and diff previous tags
+
+      # versionCode is the total commit count up to this tag -- the same counter nightly.yml
+      # uses -- so a tagged release and a nightly built off the same or a later commit share one
+      # strictly-increasing number, and either can always install over the other. versionName is
+      # the tag itself (leading "v" stripped, matching this project's existing 0.9.1-style
+      # versionName convention).
+      - name: Compute release version
+        id: version
+        run: |
+          TAG="${{ inputs.tag || github.ref_name }}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "code=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
+          echo "name=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: build
+    needs: version
+    uses: ./.github/workflows/_build-signed-apk.yml
+    with:
+      version-code: ${{ needs.version.outputs.code }}
+      version-name: ${{ needs.version.outputs.name }}
+    secrets: inherit
+
+  publish:
+    name: publish
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0   # need full tag history for the changelog diff below
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: signed-apk
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          CURRENT_TAG="${{ needs.version.outputs.tag }}"
+          PREV_TAG=$(git tag -l 'v*' --sort=-version:refname | grep -v "^${CURRENT_TAG}$" | head -1)
+
+          if [ -z "$PREV_TAG" ]; then
+            CHANGELOG="Initial release"
+          else
+            CHANGELOG=$(git log ${PREV_TAG}..${CURRENT_TAG} --reverse --pretty=format:"- %s (%h)")
+          fi
+
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.version.outputs.tag }}
+          files: '*.apk'
+          body: ${{ steps.changelog.outputs.changelog }}
+          # workflow_dispatch dry runs (no real tag push) publish as a draft so a scratch trigger
+          # never creates a public release; a real `v*` tag push publishes normally.
+          draft: ${{ github.event_name == 'workflow_dispatch' }}
+          fail_on_unmatched_files: true

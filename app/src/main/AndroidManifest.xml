@@ -1,0 +1,180 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      Required for UsbManager/UsbDeviceConnection (S20 hardware probe, issue #25 —
+      dev.tonexotg.app.probe). Not required="true" globally on <application>, since the rest of
+      the app doesn't need it yet; declared here so the Play/APK installer can warn correctly on
+      a device with no USB host support.
+    -->
+    <uses-feature
+        android:name="android.hardware.usb.host"
+        android:required="false" />
+
+    <!--
+      Declaring RECORD_AUDIO (below) makes Play implicitly require android.hardware.microphone.
+      Overridden to required="false" for the same reason as usb.host above: the app never uses a
+      built-in mic — it interacts with the Tonex as a USB audio-class device — so a phone with no
+      on-board microphone must not be filtered out of install eligibility.
+    -->
+    <uses-feature
+        android:name="android.hardware.microphone"
+        android:required="false" />
+
+    <!--
+      Using the Tonex with phone audio: it enumerates as a USB audio-class device, so the app
+      routes phone playback out to it and takes over routing while it's the active output.
+
+      RECORD_AUDIO: the app does NOT capture audio. It's declared because Android treats a USB
+      audio-class device as an input source too, and a foreground app that engages such a device
+      without holding RECORD_AUDIO trips a framework warning / access restriction on the audio
+      path. Holding the permission (even ungranted, just declared) is what the framework checks
+      for here; it is the API 23+ runtime (dangerous) permission, but this change adds no
+      runtime-request flow — as with POST_NOTIFICATIONS above, it's declared so the manifest is
+      honest about what the audio path touches, and a later story wires any prompt if one proves
+      necessary. MODIFY_AUDIO_SETTINGS is normal-protection (auto-granted at install) and covers
+      changing audio routing/mode to direct output at the USB device. Playback itself needs no
+      permission.
+    -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
+    <!--
+      S13 (issue #18): UsbConnectionService's foreground-service requirements. FOREGROUND_SERVICE
+      is the general FGS permission every foreground service needs since API 28;
+      FOREGROUND_SERVICE_CONNECTED_DEVICE is the per-type permission the `connectedDevice`
+      foreground service type itself requires since API 34 (both are normal-protection,
+      auto-granted at install — no runtime request needed). WAKE_LOCK backs the service's
+      PARTIAL_WAKE_LOCK (see UsbConnectionService's KDoc, "Wakelock"). POST_NOTIFICATIONS is the
+      API 33+ runtime permission for the service's status notification to actually display —
+      declared here so the manifest is honest about what the notification needs, but this story
+      does not add any runtime request flow for it (no UI exists yet to host that prompt — S16-19
+      are gated on D2, issue #6). If it's never granted, the foreground service still starts and
+      runs (Android does not block FGS start on missing POST_NOTIFICATIONS), it just runs with no
+      visible notification — an acceptable, documented gap for this story rather than scope creep
+      into building a permission-request UI.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application
+        android:allowBackup="true"
+        android:label="@string/app_name"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+
+        <!--
+          The real entry point (S23, issue #74). Hosts TonexApp's NavHost (preset list, parameter
+          editor, about) inside TonexTheme, starts UsbConnectionService from onStart, and never
+          opens a pedal session itself; see MainActivity's own KDoc and
+          docs/architecture/s23-ui-wiring.md §3.4/§3.5 for why every connection path goes through
+          that service instead.
+
+          android:taskAffinity is explicit so this Activity's task is never ambiguous with any
+          other Activity's. Historically this mattered because ProbeActivity below also declared
+          its own MAIN/LAUNCHER intent-filter; ProbeActivity's launcher icon was removed in issue
+          #96 (it's now reached from Settings via an explicit Intent, so it opens in this
+          Activity's own task), but MainActivity keeps its explicit affinity regardless.
+        -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:taskAffinity="${applicationId}.main">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          S12 (issue #17): auto-launches when the pedal is physically attached, matched by
+          device_filter.xml's decimal VID/PID (6499/209 — see that file's own comment for why
+          decimal, not hex). USB_DEVICE_ATTACHED can only target an <activity>, never a
+          <service> — see UsbAttachTrampolineActivity's KDoc — hence this no-display trampoline
+          rather than starting a (nonexistent, pre-S13) service directly. android:exported="true"
+          is required here: the system resolves this Activity as the intent-filter's target from
+          system_server, which requires it to be visible the same way any other implicit-intent
+          target activity would be.
+        -->
+        <activity
+            android:name=".usb.connection.UsbAttachTrampolineActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.NoDisplay"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity="${applicationId}.usbattach">
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
+                android:resource="@xml/device_filter" />
+        </activity>
+
+        <!--
+          S13 (issue #18): keeps the USB session alive across screen-off/backgrounding. Declared
+          `connectedDevice` per the issue's guidance — see UsbConnectionService's KDoc for the
+          full prerequisite/risk discussion. `android:exported="false"`: nothing outside this app
+          ever starts this service directly; UsbAttachTrampolineActivity (a foreground context,
+          per API 31+'s background-start restriction — see UsbConnectionService's KDoc) is the
+          only starter.
+        -->
+        <service
+            android:name=".usb.connection.UsbConnectionService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
+
+        <!--
+          ⚠️ DIAGNOSTIC-ONLY (S20 hardware probe, issue #25). Not part of the app's real
+          navigation — see dev.tonexotg.app.probe's KDoc. Reached from the Settings screen
+          (issue #96) via an explicit Intent, not its own launcher icon: it no longer declares a
+          MAIN/LAUNCHER intent-filter, so it no longer spawns a separate app-drawer entry.
+          exported="false" because nothing outside this app ever starts it directly.
+
+          No explicit taskAffinity either (unlike MainActivity's, above) — it inherits the
+          default (bare ${applicationId}) affinity, which differs from MainActivity's
+          "${applicationId}.main". It still opens in MainActivity's task today only because
+          SettingsScreen starts it from an Activity Context with no FLAG_ACTIVITY_NEW_TASK, which
+          reuses the calling task regardless of affinity. That's a property of the call site, not
+          a guarantee this manifest entry makes — if ProbeActivity is ever started with
+          FLAG_ACTIVITY_NEW_TASK, or from a context that requires it, the affinity mismatch would
+          spawn it into its own task again.
+        -->
+        <activity
+            android:name=".probe.ProbeActivity"
+            android:label="Tonex Probe (Diagnostic)"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode">
+            <!--
+              configChanges above keeps a rotation (or keyboard/UI-mode change) from destroying
+              and recreating this Activity mid-probe, which would cancel its CoroutineScope —
+              see ProbeSession.runWriteTest's NonCancellable restore-write guard (issue #25,
+              opus-reviewer-probe25 B1).
+            -->
+        </activity>
+
+        <!--
+          Backs ProbeActivity's "Save & share log" button (issue #25): a full read/write test's
+          log overflows ClipboardManager's Binder transaction limit, so it's written to a file
+          instead and handed to another app via a content:// Uri, per androidx's FileProvider
+          requirement (a raw file:// Uri would throw FileUriExposedException on API 24+).
+
+          Issue #71: on API 29+ the log now lives in MediaStore (Documents/tonex-logs/), whose
+          insert() already returns a usable content:// Uri directly; see ProbeLogFile.create.
+          This provider is only reached on the API 26-28 fallback path (below the scoped-storage
+          cutover at 29), which still writes a plain File under getExternalFilesDir(null) the way
+          #69 originally did. Kept, not removed, because minSdk is 26 and that range still needs
+          a working "Save & share log"; the real target hardware (API 36) never exercises it.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.probelogprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/probe_log_file_paths" />
+        </provider>
+    </application>
+
+</manifest>
