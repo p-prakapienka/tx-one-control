@@ -66,15 +66,13 @@ import dev.tonexotg.protocol.PresetSlot
  * [RigEditorScreen], a 4×5 grid of the 20 onboard presets, and the master volume knob.
  *
  * Tap a preset tile to load it; long-press to assign it to footswitch slot A, B or C. Renaming and
- * the six global settings stay on the classic list ([onOpenList]).
+ * the six global settings stay on the Presets tab. Navigation between top-level screens is the
+ * app-wide bottom tab bar (`RigTabBar`), not buttons on this screen.
  */
 @Composable
 fun StageScreen(
     viewModel: PresetListViewModel,
     onEditTone: () -> Unit,
-    onOpenList: () -> Unit,
-    onSettingsClick: () -> Unit,
-    onAboutClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -85,21 +83,7 @@ fun StageScreen(
             .fillMaxSize()
             .background(RigChassis),
     ) {
-        RigTopBar(
-            title = "Tonex-OTG",
-            onBack = null,
-            actions = {
-                TextButton(onClick = onOpenList, modifier = Modifier.testTag("stage.listButton")) {
-                    Text("List", color = TonexOnSurfaceTertiary)
-                }
-                TextButton(onClick = onSettingsClick, modifier = Modifier.testTag("stage.settingsButton")) {
-                    Text("Settings", color = TonexOnSurfaceTertiary)
-                }
-                TextButton(onClick = onAboutClick, modifier = Modifier.testTag("stage.aboutButton")) {
-                    Text("About", color = TonexOnSurfaceTertiary)
-                }
-            },
-        )
+        RigTopBar(title = "Tonex-OTG", onBack = null, actions = {})
 
         PresetLcd(
             number = active?.index?.value?.plus(1),

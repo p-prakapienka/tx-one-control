@@ -3,8 +3,10 @@ package dev.tonexotg.app.ui.navigation
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -12,7 +14,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -21,11 +22,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import dev.tonexotg.app.session.TonexSessionHolder
 import dev.tonexotg.app.ui.screens.about.AboutScreen
@@ -120,18 +122,23 @@ fun TonexApp(
         val blockedReason by sessionHolder.blockedReason.collectAsState()
         blockedReason?.let { reason -> BlockedReasonBanner(reason = reason) }
 
+        // Top-level screens sit behind a bottom tab bar; the two editors are pushed on top of a
+        // tab with their own back buttons, and hide the bar while they show.
+        val backStackEntry by navController.currentBackStackEntryAsState()
+        val currentTab = TopLevelTab.forRoute(backStackEntry?.destination?.route)
+
         NavHost(
             navController = navController,
             startDestination = TonexRoute.STAGE.route,
-            modifier = Modifier.weight(1f),
+            // The tab bar pads for the system navigation bar itself, so screens above it must not.
+            modifier = Modifier
+                .weight(1f)
+                .then(if (currentTab != null) Modifier.consumeWindowInsets(WindowInsets.navigationBars) else Modifier),
         ) {
             composable(TonexRoute.STAGE.route) {
                 StageScreen(
                     viewModel = presetListViewModel,
                     onEditTone = { navController.navigate(TonexRoute.RIG_EDITOR.route) },
-                    onOpenList = { navController.navigate(TonexRoute.PRESET_LIST.route) },
-                    onSettingsClick = { navController.navigate(TonexRoute.SETTINGS.route) },
-                    onAboutClick = { navController.navigate(TonexRoute.ABOUT.route) },
                 )
             }
             composable(TonexRoute.RIG_EDITOR.route) {
@@ -146,8 +153,6 @@ fun TonexApp(
                 PresetListRoute(
                     viewModel = presetListViewModel,
                     onPresetOpened = { navController.navigate(TonexRoute.PARAMETER_EDITOR.route) },
-                    onAboutClick = { navController.navigate(TonexRoute.ABOUT.route) },
-                    onSettingsClick = { navController.navigate(TonexRoute.SETTINGS.route) },
                 )
             }
             composable(TonexRoute.PARAMETER_EDITOR.route) {
@@ -162,6 +167,21 @@ fun TonexApp(
             composable(TonexRoute.SETTINGS.route) {
                 SettingsScreen()
             }
+        }
+
+        if (currentTab != null) {
+            RigTabBar(
+                selected = currentTab,
+                onSelect = { tab ->
+                    // Standard tab behaviour: one back stack entry per tab on top of the start
+                    // destination, so system back from any tab returns to Rig, then exits.
+                    navController.navigate(tab.route.route) {
+                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                },
+            )
         }
     }
 }
@@ -195,27 +215,12 @@ private fun BlockedReasonBanner(reason: String, modifier: Modifier = Modifier) {
 private fun PresetListRoute(
     viewModel: PresetListViewModel,
     onPresetOpened: (PresetIndex) -> Unit,
-    onAboutClick: () -> Unit,
-    onSettingsClick: () -> Unit,
 ) {
+    // Settings and About are tabs in the bottom bar (RigTabBar), so the top bar is title-only.
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(text = "Presets", style = MaterialTheme.typography.titleLarge) },
-                actions = {
-                    TextButton(
-                        onClick = onSettingsClick,
-                        modifier = Modifier.testTag("presetList.settingsButton"),
-                    ) {
-                        Text("Settings")
-                    }
-                    TextButton(
-                        onClick = onAboutClick,
-                        modifier = Modifier.testTag("presetList.aboutButton"),
-                    ) {
-                        Text("About")
-                    }
-                },
             )
         },
     ) { contentPadding ->
