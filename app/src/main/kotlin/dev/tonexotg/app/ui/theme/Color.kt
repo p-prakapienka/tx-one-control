@@ -84,6 +84,10 @@ val RigChassis = Color(0xFF151517)
 /** Raised panel (block editor, preset tiles). */
 val RigPanel = Color(0xFF1F2023)
 
+/** Higher panel tiers for M3 roles (dialogs, sheets, pressed fills) in the rig color scheme. */
+val RigPanelHigh = Color(0xFF26282C)
+val RigPanelHighest = Color(0xFF2F3136)
+
 /** Panel edge / divider hairline. */
 val RigPanelEdge = Color(0xFF34363B)
 
