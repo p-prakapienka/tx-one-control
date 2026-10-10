@@ -1,12 +1,18 @@
-# Tonex-OTG
+# tx-one-control
 
-A native Android app that controls an [IK Multimedia ToneX One](https://www.ikmultimedia.com/products/tonexone/)
+A native Android app that controls an original [IK Multimedia ToneX One](https://www.ikmultimedia.com/products/tonexone/)
 guitar pedal over a wired USB-OTG connection — full preset and parameter
-control from your phone, no laptop needed for field/live use.
+control from your phone, no laptop needed.
 
-[![CI](https://github.com/wiz0floyd/tonex-otg/actions/workflows/ci.yml/badge.svg)](https://github.com/wiz0floyd/tonex-otg/actions/workflows/ci.yml)
-[![Latest release](https://img.shields.io/github/v/release/wiz0floyd/tonex-otg)](https://github.com/wiz0floyd/tonex-otg/releases/latest)
+[![CI](https://github.com/p-prakapienka/tx-one-control/actions/workflows/ci.yml/badge.svg)](https://github.com/p-prakapienka/tx-one-control/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
+> **Based on [wiz0floyd/Tonex-OTG](https://github.com/wiz0floyd/Tonex-OTG).**
+> This repository carries Tonex-OTG's full history and builds on it — the
+> current focus here is a hardware-style "rig" UI (LCD preset readout,
+> signal-chain strip, rotary knobs). Everything below that describes the app
+> itself is inherited from Tonex-OTG. Agents working in this repo: start with
+> [AGENTS.md](AGENTS.md).
 
 ## What it does
 
@@ -48,16 +54,18 @@ registered trademark of IK Multimedia Production Srl.
 
 ## Download and install
 
-Grab the latest signed APK from the
-[Releases page](https://github.com/wiz0floyd/tonex-otg/releases/latest).
-Nightly builds (tracking `main`) are also published as a
-[pre-release](https://github.com/wiz0floyd/tonex-otg/releases/tag/nightly)
-if you want the bleeding edge.
+Every push to every branch is built by [CI](https://github.com/p-prakapienka/tx-one-control/actions/workflows/ci.yml).
+Open the run for the commit you want and download the `debug-apk-…`
+artifact at the bottom of the run summary (GitHub zips it; unzip to get
+`app-debug.apk`). Artifacts are kept for 30 days.
 
-F-Droid listing is planned but not yet published — this README will be
-updated with a badge/link once the submission lands.
+Debug builds use the applicationId `dev.tonexotg.app`, the same as
+upstream Tonex-OTG, so they replace an installed Tonex-OTG build. Android
+only lets an app update in place when the new APK is signed with the same
+key — see "Stable signing for CI builds" in [AGENTS.md](AGENTS.md) if you
+want consecutive CI builds to install over each other without uninstalling.
 
-1. Download the APK from the release you want.
+1. Download and unzip the APK artifact from the CI run you want.
 2. Install it (you may need to allow "install unknown apps" for your
    browser/file manager the first time).
 3. Connect your phone to the ToneX One with a USB-OTG cable, power on the
@@ -67,8 +75,8 @@ updated with a badge/link once the submission lands.
 ## Building from source
 
 ```
-git clone https://github.com/wiz0floyd/tonex-otg.git
-cd tonex-otg
+git clone https://github.com/p-prakapienka/tx-one-control.git
+cd tx-one-control
 ./gradlew :app:assembleDebug
 ```
 
@@ -79,13 +87,12 @@ be built and tested on its own:
 ./gradlew :protocol:test
 ```
 
-Building `:app` requires the Android SDK (API 36) — see
-[CLAUDE.md](CLAUDE.md) if you're working with an AI coding agent in this
-repo, it documents the expected SDK setup.
+Building `:app` requires JDK 21 and the Android SDK (API 36) — see
+[AGENTS.md](AGENTS.md) for the full setup and the exact checks CI runs.
 
 ## Reporting bugs / hardware issues
 
-Please [open an issue](https://github.com/wiz0floyd/tonex-otg/issues/new).
+Please [open an issue](https://github.com/p-prakapienka/tx-one-control/issues/new).
 Include:
 
 - What you expected vs. what happened
