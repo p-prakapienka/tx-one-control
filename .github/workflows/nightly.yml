@@ -24,6 +24,11 @@ permissions:
 jobs:
   version:
     name: version
+    # Opt-in for this repo: the build needs the RELEASE_KEYSTORE_* secrets (see
+    # _build-signed-apk.yml), which aren't configured yet. Without this gate every push to main
+    # would end in a red run. Set the repository variable ENABLE_NIGHTLY=true once the secrets
+    # exist; `build` and `publish` are skipped along with this job until then.
+    if: vars.ENABLE_NIGHTLY == 'true'
     runs-on: ubuntu-latest
     outputs:
       code: ${{ steps.version.outputs.code }}
