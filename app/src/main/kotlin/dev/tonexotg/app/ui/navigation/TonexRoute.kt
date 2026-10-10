@@ -16,7 +16,13 @@ package dev.tonexotg.app.ui.navigation
  */
 enum class TonexRoute(val route: String) {
 
-    /** Start destination: all 20 onboard presets (S16). */
+    /** Start destination: the rig home screen — LCD, preset grid, master volume. */
+    STAGE("stage"),
+
+    /** Hardware-style editor for the *currently active* preset (same no-argument rule as below). */
+    RIG_EDITOR("rig"),
+
+    /** All 20 onboard presets as a list, with renaming and the global settings tray (S16). */
     PRESET_LIST("presets"),
 
     /** Quick tier + full-tier accordion for the *currently active* preset (S17). */

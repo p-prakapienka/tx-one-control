@@ -73,3 +73,39 @@ val TonexStatusError = Color(0xFFFF5252)
  * fills — D1 §2.4) — reusing that val keeps the "why" visible instead of repeating the literal.
  */
 val TonexOnStatus = TonexOnAccent
+
+// ---- Rig skin (the "hardware" look used by ui/screens/rig) ----
+// An original dark-hardware palette: charcoal chassis, brushed-steel knobs, amber LEDs and a
+// green-on-black LCD. Kept here with every other color literal, per this file's own rule.
+
+/** Chassis background behind the rig screens — a touch warmer than [TonexSurfaceBase]. */
+val RigChassis = Color(0xFF151517)
+
+/** Raised panel (block editor, preset tiles). */
+val RigPanel = Color(0xFF1F2023)
+
+/** Panel edge / divider hairline. */
+val RigPanelEdge = Color(0xFF34363B)
+
+/** Knob body, light and dark ends of its radial gradient. */
+val RigKnobLight = Color(0xFF5A5D63)
+val RigKnobDark = Color(0xFF1C1D20)
+
+/** Unlit knob track / unlit LED. */
+val RigTrack = Color(0xFF2C2E33)
+
+/** Amber accent: value arcs, lit LEDs, active selection. */
+val RigAmber = Color(0xFFFFB02E)
+
+/** Dim amber for glows and secondary highlights. */
+val RigAmberDim = Color(0x55FFB02E)
+
+/** LCD background and its phosphor-green text. */
+val RigLcd = Color(0xFF0B120D)
+val RigLcdText = Color(0xFF8CFFB0)
+val RigLcdTextDim = Color(0xFF3E7A52)
+
+/** Footswitch slot badge colors (A / B / C). */
+val RigSlotA = Color(0xFFFF6B5A)
+val RigSlotB = Color(0xFF5AB4FF)
+val RigSlotC = Color(0xFFB98CFF)

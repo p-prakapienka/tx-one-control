@@ -159,6 +159,16 @@ fun ParameterEditorScreen(
         }
     }
 
+    ParameterEditorDialogs(uiState = uiState, viewModel = viewModel)
+}
+
+/**
+ * Every dialog/sheet the parameter editor can raise: numeric entry, the first-write notice, the
+ * revert confirmation, and the revert/write error alerts. Shared by [ParameterEditorScreen] and the
+ * rig editor so both surface failures identically (fail fast and loud).
+ */
+@Composable
+internal fun ParameterEditorDialogs(uiState: ParameterEditorUiState, viewModel: ParameterEditorViewModel) {
     uiState.numericEntryTarget?.let { row ->
         ParameterNumericEntrySheet(
             parameterName = row.label,

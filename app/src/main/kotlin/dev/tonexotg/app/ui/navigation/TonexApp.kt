@@ -36,6 +36,8 @@ import dev.tonexotg.app.ui.screens.parameters.ParameterEditorViewModel
 import dev.tonexotg.app.ui.screens.presets.PresetListScreen
 import dev.tonexotg.app.ui.screens.presets.PresetListViewModel
 import dev.tonexotg.app.ui.screens.presets.rememberPresetListViewModel
+import dev.tonexotg.app.ui.screens.rig.RigEditorScreen
+import dev.tonexotg.app.ui.screens.rig.StageScreen
 import dev.tonexotg.app.ui.screens.settings.SettingsScreen
 import dev.tonexotg.protocol.PresetIndex
 
@@ -120,9 +122,26 @@ fun TonexApp(
 
         NavHost(
             navController = navController,
-            startDestination = TonexRoute.PRESET_LIST.route,
+            startDestination = TonexRoute.STAGE.route,
             modifier = Modifier.weight(1f),
         ) {
+            composable(TonexRoute.STAGE.route) {
+                StageScreen(
+                    viewModel = presetListViewModel,
+                    onEditTone = { navController.navigate(TonexRoute.RIG_EDITOR.route) },
+                    onOpenList = { navController.navigate(TonexRoute.PRESET_LIST.route) },
+                    onSettingsClick = { navController.navigate(TonexRoute.SETTINGS.route) },
+                    onAboutClick = { navController.navigate(TonexRoute.ABOUT.route) },
+                )
+            }
+            composable(TonexRoute.RIG_EDITOR.route) {
+                RigEditorScreen(
+                    viewModel = parameterEditorViewModel,
+                    presetListViewModel = presetListViewModel,
+                    onBack = { navController.popBackStack() },
+                    onOpenClassicEditor = { navController.navigate(TonexRoute.PARAMETER_EDITOR.route) },
+                )
+            }
             composable(TonexRoute.PRESET_LIST.route) {
                 PresetListRoute(
                     viewModel = presetListViewModel,
