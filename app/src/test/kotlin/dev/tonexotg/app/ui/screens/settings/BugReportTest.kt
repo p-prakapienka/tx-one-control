@@ -22,7 +22,7 @@ class BugReportTest {
 
         assertEquals("https", uri.scheme)
         assertEquals("github.com", uri.host)
-        assertEquals("/wiz0floyd/Tonex-OTG/issues/new", uri.path)
+        assertEquals("/p-prakapienka/tx-one-control/issues/new", uri.path)
     }
 
     @Test

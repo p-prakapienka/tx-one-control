@@ -1,4 +1,4 @@
-# tx-one-control
+# TX One Control
 
 A native Android app that controls an original [IK Multimedia ToneX One](https://www.ikmultimedia.com/products/tonexone/)
 guitar pedal over a wired USB-OTG connection — full preset and parameter

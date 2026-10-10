@@ -83,7 +83,7 @@ fun StageScreen(
             .fillMaxSize()
             .background(RigChassis),
     ) {
-        RigTopBar(title = "Tonex-OTG", onBack = null, actions = {})
+        RigTopBar(title = "TX One Control", onBack = null, actions = {})
 
         PresetLcd(
             number = active?.index?.value?.plus(1),

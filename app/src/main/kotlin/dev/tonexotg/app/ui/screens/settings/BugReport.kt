@@ -35,4 +35,4 @@ internal fun buildBugReportIssueUri(appVersionInfo: AppVersionInfo): Uri {
         .build()
 }
 
-private const val GITHUB_REPO = "wiz0floyd/Tonex-OTG"
+private const val GITHUB_REPO = "p-prakapienka/tx-one-control"

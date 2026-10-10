@@ -391,7 +391,7 @@ private fun FirstDestructiveWriteNotice(presetName: String, onDismiss: (dontShow
         text = {
             Column {
                 Text(
-                    "Tonex-OTG writes every change straight to the pedal as you make it. There's no undo " +
+                    "TX One Control writes every change straight to the pedal as you make it. There's no undo " +
                         "on the pedal itself. A snapshot of $presetName was taken the moment it became " +
                         "active. You can revert to it any time from Settings — until then, experiment freely.",
                 )

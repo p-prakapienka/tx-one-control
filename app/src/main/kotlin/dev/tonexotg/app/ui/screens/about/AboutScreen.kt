@@ -62,7 +62,7 @@ fun AboutScreen(
                 .padding(TonexTheme.spacing.space3),
             verticalArrangement = Arrangement.spacedBy(TonexTheme.spacing.space4),
         ) {
-            Text(text = "About Tonex-OTG", style = MaterialTheme.typography.headlineSmall)
+            Text(text = "About TX One Control", style = MaterialTheme.typography.headlineSmall)
 
             AppInfoSection(appVersionInfo = appVersionInfo, firmwareInfo = firmwareInfo)
 
@@ -70,8 +70,9 @@ fun AboutScreen(
 
             Text(text = "Credits & Licences", style = MaterialTheme.typography.titleLarge)
             Text(
-                text = "Tonex-OTG ports USB protocol logic from the two open-source projects " +
-                    "below. Full attribution details: /CREDITS.md.",
+                text = "TX One Control is based on Tonex-OTG by wiz0floyd " +
+                    "(github.com/wiz0floyd/Tonex-OTG, Apache-2.0), which ports USB protocol logic " +
+                    "from the two open-source projects below. Full attribution details: /CREDITS.md.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
