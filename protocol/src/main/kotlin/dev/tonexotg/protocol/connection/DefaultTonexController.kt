@@ -120,6 +120,7 @@ class DefaultTonexController(
     private val _activePreset = MutableStateFlow<PresetIndex?>(null)
     private val _presets = MutableStateFlow<List<PresetInfo>>(emptyList())
     private val _slotAssignments = MutableStateFlow<Map<PresetSlot, PresetIndex>>(emptyMap())
+    private val _activeSlot = MutableStateFlow<PresetSlot?>(null)
     private val _parameterValues = MutableStateFlow<Map<ParameterId, Float>>(emptyMap())
     private val _events = MutableSharedFlow<TonexEvent>(
         replay = 0,
@@ -196,6 +197,7 @@ class DefaultTonexController(
     override val activePreset: StateFlow<PresetIndex?> = _activePreset.asStateFlow()
     override val presets: StateFlow<List<PresetInfo>> = _presets.asStateFlow()
     override val slotAssignments: StateFlow<Map<PresetSlot, PresetIndex>> = _slotAssignments.asStateFlow()
+    override val activeSlot: StateFlow<PresetSlot?> = _activeSlot.asStateFlow()
     override val parameterValues: StateFlow<Map<ParameterId, Float>> = _parameterValues.asStateFlow()
     override val events: SharedFlow<TonexEvent> = _events.asSharedFlow()
 
@@ -374,6 +376,8 @@ class DefaultTonexController(
         // up live in slotAssignments, with zero extra plumbing.
         val slots = StateBlobReader.slotAssignments(state)
         if (slots is TonexResult.Success) _slotAssignments.value = slots.value
+        val slot = StateBlobReader.activeSlot(state.copyOfBytes())
+        if (slot is TonexResult.Success) _activeSlot.value = slot.value
 
         // issue #83: keep the six GLOBAL-scope parameters' displayed values live on every state
         // push, the same way slotAssignments already is - independent of the activePreset read
@@ -680,6 +684,7 @@ class DefaultTonexController(
         _presets.value = emptyList()
         _activePreset.value = null
         _slotAssignments.value = emptyMap()
+        _activeSlot.value = null
         _parameterValues.value = emptyMap()
         _connectionState.value = finalState // LAST, always
     }
@@ -778,6 +783,8 @@ class DefaultTonexController(
         // teardown's own invariant (a collector must never see Ready with stale flows) applies
         // here too.
         _slotAssignments.value = footswitchSnapshot?.toMap() ?: emptyMap()
+        // Same handshake blob, same rule: seeded before Ready is published.
+        _activeSlot.value = (StateBlobReader.activeSlot(blob) as? TonexResult.Success)?.value
         // issue #83: seed the six GLOBAL-scope parameters' displayed values from this same
         // handshake blob - a pure decode of bytes already in hand, not a further round trip - so a
         // home-screen control never renders a ParameterRegistry default before its first live read.
@@ -1152,6 +1159,61 @@ class DefaultTonexController(
         // regression in that preference can't silently resurrect #86 by re-arming unconditionally.
         val changesActivePreset = currentActive != index
         if (changesActivePreset) selfInitiatedPreset = index
+        writeFramed(SetStateMessage.encode(patched)).orReturn {
+            if (changesActivePreset) selfInitiatedPreset = null
+            return@withLock it
+        }
+        TonexResult.Success(Unit)
+    }
+
+    // ---- selectSlot() --------------------------------------------------------------------------
+
+    /**
+     * Switches the active footswitch slot and the pedal's mode together — see [TonexController]'s
+     * KDoc and [StateBlobPatcher.selectSlot] for the two bytes and why they travel as a pair.
+     *
+     * [selfInitiatedPreset] is armed only when the active preset actually moves (the preset in
+     * [slot] differs from the one active now), the same conditional rule as [selectPreset] and
+     * [assignPresetToSlot]: switching between two slots that hold the same preset (a duplicate the
+     * pedal can carry; see issue #86) leaves the active preset where it is, and arming then would
+     * strand the latch and swallow a later genuine [TonexEvent.ExternalPresetChange].
+     */
+    override suspend fun selectSlot(slot: PresetSlot): TonexResult<Unit> = operationMutex.withLock {
+        if (_connectionState.value !is ConnectionState.Ready) {
+            return@withLock TonexResult.Failure(
+                TonexError.ProtocolStateViolation(_connectionState.value, "selectSlot requires Ready"),
+            )
+        }
+        val s = session ?: return@withLock TonexResult.Failure(
+            TonexError.ProtocolStateViolation(_connectionState.value, "no session (internal invariant violated)"),
+        )
+
+        // ---- MANDATORY re-read, immediately before the patch (PedalState's freshness contract). ---
+        val fresh: PedalState = requestAndAwait(
+            RequestStateMessage.encode(),
+            timeouts.stateReadMillis,
+            "state-read",
+        ) { inb ->
+            commonInbound("state-read", inb) ?: when (inb) {
+                is Inbound.State -> inb.result
+                else -> null
+            }
+        }.orReturn { return@withLock it }
+
+        val bytes = fresh.copyOfBytes()
+        val currentSlot = StateBlobReader.activeSlot(bytes).orReturn { return@withLock it }
+        val stomp = StateBlobReader.stompMode(bytes).orReturn { return@withLock it }
+        val currentActive = StateBlobReader.presetInSlot(bytes, currentSlot).orReturn { return@withLock it }
+        val newActive = StateBlobReader.presetInSlot(bytes, slot).orReturn { return@withLock it }
+
+        // Already there, in the matching mode, per a read taken moments ago.
+        if (currentSlot == slot && stomp == (slot == PresetSlot.C)) return@withLock TonexResult.Success(Unit)
+
+        val patched = StateBlobPatcher.selectSlot(fresh, s, slot).orReturn { return@withLock it }
+
+        // Set AFTER the re-read, BEFORE the write — see selectPreset for why the order matters.
+        val changesActivePreset = currentActive != newActive
+        if (changesActivePreset) selfInitiatedPreset = newActive
         writeFramed(SetStateMessage.encode(patched)).orReturn {
             if (changesActivePreset) selfInitiatedPreset = null
             return@withLock it

@@ -845,10 +845,10 @@ class StateBlobPatcherTest {
 
     @Test
     fun `selecting a preset never touches the stomp-mode or direct-monitor bytes`() {
-        // These offsets are deliberately NOT named in StateBlobOffsets - see its KDoc, "Fields
-        // intentionally NOT modelled here". Duplicated here, read-only, purely to prove no write
-        // path in this module can reach them (upstream usb_tonex_one.c lines 106 and 113, same
-        // pin as StateBlobOffsets).
+        // Upstream usb_tonex_one.c lines 106 and 113, same pin as StateBlobOffsets, as bare
+        // literals so this test doesn't lean on the constants it guards. Direct monitor is still
+        // unnamed in StateBlobOffsets; stomp mode is named now (START_STOMP_MODE), but only
+        // StateBlobPatcher.selectSlot may write it - see the selectSlot tests below.
         val upstreamStartStompMode = 19
         val upstreamEndDirectMonitor = 7
 
@@ -1485,4 +1485,105 @@ class StateBlobPatcherTest {
             assertEquals(sentinel, patched[patched.size - StateBlobOffsets.END_BYPASS_MODE], "restoreSlotAssignments must not touch END_BYPASS_MODE")
         }
     }
+
+    // ---- selectSlot: active slot + stomp mode, as a pair -----------------------------------------
+
+    @Test
+    fun `START_STOMP_MODE is upstream's literal offset 19`() {
+        assertEquals(19, StateBlobOffsets.START_STOMP_MODE)
+    }
+
+    @Test
+    fun `selectSlot C writes active slot 2 and stomp mode 1, every other byte bit-identical`() {
+        val session = SessionId.create()
+        val original = plausibleBlob(currentSlot = 0).also { it[StateBlobOffsets.START_STOMP_MODE] = 0 }
+        val patched = StateBlobPatcher.selectSlot(stateFor(session, original), session, PresetSlot.C).assertSuccess()
+        assertOnlySlotAndStompChanged(original, patched, slot = 2, stomp = 1)
+    }
+
+    @Test
+    fun `selectSlot A or B writes stomp mode 0`() {
+        for ((slot, ordinal) in listOf(PresetSlot.A to 0, PresetSlot.B to 1)) {
+            val session = SessionId.create()
+            val original = plausibleBlob(currentSlot = 2).also { it[StateBlobOffsets.START_STOMP_MODE] = 1 }
+            val patched = StateBlobPatcher.selectSlot(stateFor(session, original), session, slot).assertSuccess()
+            assertOnlySlotAndStompChanged(original, patched, slot = ordinal, stomp = 0)
+        }
+    }
+
+    @Test
+    fun `selectSlot against the real S22 hardware capture flips exactly the two bytes`() {
+        // docs/hardware-probes/tonexprobe20260819_220308.log.txt, "S22 backup: full state blob
+        // (160 bytes)": slot A active (end-11 = 0x00), stomp-mode byte (start 19) = 0x00, A/B mode.
+        val captured = capturedS22Blob()
+        assertEquals(0x00.toByte(), captured[19])
+        assertEquals(0x00.toByte(), captured[captured.size - 11])
+
+        val session = SessionId.create()
+        val patched = StateBlobPatcher.selectSlot(stateFor(session, captured), session, PresetSlot.C).assertSuccess()
+        assertOnlySlotAndStompChanged(captured, patched, slot = 2, stomp = 1)
+    }
+
+    @Test
+    fun `selectSlot refuses a stomp-mode byte that is not a flag, without spending the read`() {
+        val session = SessionId.create()
+        val implausible = plausibleBlob().also { it[StateBlobOffsets.START_STOMP_MODE] = 0x42 }
+        val state = stateFor(session, implausible)
+
+        val error = StateBlobPatcher.selectSlot(state, session, PresetSlot.C).assertFailure()
+        assertTrue(error is TonexError.ImplausibleStateBlobShape, "expected ImplausibleStateBlobShape, got $error")
+        // Checked before prepareForPatch, so the same read still authorises a different write.
+        StateBlobPatcher.patchActiveSlot(state, session, PresetSlot.B).assertSuccess()
+    }
+
+    @Test
+    fun `selectSlot is single-use like every other patch`() {
+        val session = SessionId.create()
+        val state = stateFor(session, plausibleBlob().also { it[StateBlobOffsets.START_STOMP_MODE] = 0 })
+        StateBlobPatcher.selectSlot(state, session, PresetSlot.C).assertSuccess()
+        val error = StateBlobPatcher.selectSlot(state, session, PresetSlot.A).assertFailure()
+        assertTrue(error is TonexError.StaleSessionState, "expected StaleSessionState, got $error")
+    }
+
+    @Test
+    fun `preset selection and slot assignment never touch START_STOMP_MODE`() {
+        val sentinel: Byte = 0x42
+        val calls: List<(PedalState, SessionId) -> TonexResult<ByteArray>> = listOf(
+            { st, se -> StateBlobPatcher.selectPreset(st, se, PresetSlot.B, PresetIndex(7)) },
+            { st, se -> StateBlobPatcher.patchSlotAssignment(st, se, PresetSlot.C, PresetIndex(7)) },
+            { st, se -> StateBlobPatcher.patchActiveSlot(st, se, PresetSlot.C) },
+        )
+        for (call in calls) {
+            val session = SessionId.create()
+            val original = plausibleBlob().also { it[StateBlobOffsets.START_STOMP_MODE] = sentinel }
+            val patched = call(stateFor(session, original), session).assertSuccess()
+            assertEquals(sentinel, patched[StateBlobOffsets.START_STOMP_MODE], "stomp-mode byte must be untouched")
+        }
+    }
+
+    private fun assertOnlySlotAndStompChanged(original: ByteArray, patched: ByteArray, slot: Int, stomp: Int) {
+        assertEquals(original.size, patched.size)
+        val slotIndex = original.size - StateBlobOffsets.END_CURRENT_SLOT
+        for (i in original.indices) {
+            when (i) {
+                slotIndex -> assertEquals(slot.toByte(), patched[i], "active-slot byte")
+                StateBlobOffsets.START_STOMP_MODE -> assertEquals(stomp.toByte(), patched[i], "stomp-mode byte")
+                else -> assertEquals(original[i], patched[i], "byte at index $i must be unchanged")
+            }
+        }
+    }
+
+    /** The S22 hardware capture, byte for byte (also used by StateBlobReaderTest). */
+    private fun capturedS22Blob(): ByteArray = intArrayOf(
+        0xB9, 0x01, 0xB9, 0x0E, 0x82, 0x4C, 0x42, 0x4C, 0x47, 0xB9, 0x03, 0x00, 0x04, 0x00, 0x88, 0x00,
+        0x00, 0x20, 0x40, 0x00, 0x00, 0x01, 0xBA, 0x14, 0xB9, 0x03, 0x00, 0x80, 0xFF, 0x00, 0xB9, 0x03,
+        0x00, 0x00, 0x80, 0xFF, 0xB9, 0x03, 0x80, 0xFF, 0x00, 0x00, 0xB9, 0x03, 0x80, 0xFF, 0x00, 0x00,
+        0xB9, 0x03, 0x00, 0x00, 0x80, 0xFF, 0xB9, 0x03, 0x80, 0xFF, 0x00, 0x00, 0xB9, 0x03, 0x80, 0xBF,
+        0x80, 0xBF, 0x80, 0xBF, 0xB9, 0x03, 0x0F, 0x80, 0xFF, 0x2F, 0xB9, 0x03, 0x80, 0xFF, 0x00, 0x00,
+        0xB9, 0x03, 0x2F, 0x00, 0x80, 0xFF, 0xB9, 0x03, 0x11, 0x11, 0x00, 0xB9, 0x03, 0x00, 0x00, 0x80,
+        0xFF, 0xB9, 0x03, 0x05, 0x00, 0x11, 0xB9, 0x03, 0x80, 0xFF, 0x00, 0x00, 0xB9, 0x03, 0x80, 0xFF,
+        0x00, 0x00, 0xB9, 0x03, 0x11, 0x00, 0x00, 0xB9, 0x03, 0x00, 0x80, 0xFF, 0x00, 0xB9, 0x03, 0x0B,
+        0x0B, 0x0B, 0xB9, 0x03, 0x11, 0x22, 0x00, 0xB9, 0x03, 0x00, 0x19, 0x19, 0xBC, 0x06, 0x00, 0x00,
+        0x0A, 0x00, 0x03, 0x00, 0x00, 0x00, 0x81, 0xB8, 0x01, 0x01, 0x00, 0x88, 0x00, 0x00, 0x70, 0x43,
+    ).map { it.toByte() }.toByteArray()
 }

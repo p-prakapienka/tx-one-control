@@ -64,6 +64,27 @@ internal object StateBlobReader {
         return TonexResult.Success(PresetSlot.entries[activeSlotValue])
     }
 
+    /**
+     * Whether the pedal is in stomp mode (`true`, slot C) rather than A/B mode (`false`), decoded
+     * from the [StateBlobOffsets.START_STOMP_MODE] byte.
+     *
+     * Rejects anything other than `0`/`1` with [TonexError.ImplausibleStateBlobShape] — that byte
+     * is a flag, so another value means the offset doesn't point where we think it does for this
+     * blob. Deliberately not folded into [looksLikeSlotRegion]: that gate guards every existing
+     * read and write, and widening it would make a blob that is fine for preset selection fail
+     * because of a byte preset selection never touches.
+     */
+    fun stompMode(bytes: ByteArray): TonexResult<Boolean> {
+        val validated = validate(bytes)
+        if (validated is TonexResult.Failure) return validated
+
+        return when (bytes[StateBlobOffsets.START_STOMP_MODE].toInt() and 0xFF) {
+            0 -> TonexResult.Success(false)
+            1 -> TonexResult.Success(true)
+            else -> TonexResult.Failure(TonexError.ImplausibleStateBlobShape(actualSize = bytes.size))
+        }
+    }
+
     /** [slot]'s currently assigned preset, decoded from [bytes]. */
     fun presetInSlot(bytes: ByteArray, slot: PresetSlot): TonexResult<PresetIndex> {
         val validated = validate(bytes)

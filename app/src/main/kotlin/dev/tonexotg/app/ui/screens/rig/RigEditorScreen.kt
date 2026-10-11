@@ -160,10 +160,25 @@ fun RigEditorScreen(
 
 /** Previous/next preset handler for the LCD, or `null` (button dimmed) when there's no live pedal. */
 internal fun presetStepper(state: PresetListUiState, viewModel: PresetListViewModel, step: Int): (() -> Unit)? {
+    val target = nextSelectablePreset(state, step) ?: return null
+    return { viewModel.selectPreset(target) }
+}
+
+/**
+ * The next preset in direction [step] (±1) that can be loaded into the active slot, wrapping
+ * around, like the pedal's own preset knob: presets held by the other two footswitch slots are
+ * skipped ([PresetListUiState.isSelectable]). `null` with no live pedal, no known active preset,
+ * or nothing else selectable.
+ */
+internal fun nextSelectablePreset(state: PresetListUiState, step: Int): PresetIndex? {
     if (!state.isLive) return null
     val current = state.items.firstOrNull { it.isActive }?.index?.value ?: return null
     val count = state.items.size
-    return { viewModel.selectPreset(PresetIndex(((current + step) % count + count) % count)) }
+    for (k in 1 until count) {
+        val candidate = state.items[((current + step * k) % count + count) % count]
+        if (state.isSelectable(candidate)) return candidate.index
+    }
+    return null
 }
 
 /** Long-press on a chain tile: flip the block's enable switch (or, for the cab, Disabled ↔ Tone Model). */

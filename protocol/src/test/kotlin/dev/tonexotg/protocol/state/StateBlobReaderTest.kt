@@ -280,4 +280,21 @@ class StateBlobReaderTest {
         val blob = plausibleBlob(slotA = 250)
         assertTrue(StateBlobReader.globalParameterValues(blob).assertFailure() is TonexError.ImplausibleStateBlobShape)
     }
+
+    // ---- stompMode -----------------------------------------------------------------------------
+
+    @Test
+    fun `stompMode reads A-B mode from the real captured hardware blob`() {
+        // Byte 19 of the S22 capture is 0x00 with slot A active (end-11 = 0x00).
+        assertEquals(false, StateBlobReader.stompMode(capturedHardwareBlob).assertSuccess())
+    }
+
+    @Test
+    fun `stompMode reads 1 as stomp mode and refuses anything that is not a flag`() {
+        val on = plausibleBlob().also { it[StateBlobOffsets.START_STOMP_MODE] = 1 }
+        assertEquals(true, StateBlobReader.stompMode(on).assertSuccess())
+
+        val junk = plausibleBlob().also { it[StateBlobOffsets.START_STOMP_MODE] = 2 }
+        assertTrue(StateBlobReader.stompMode(junk).assertFailure() is TonexError.ImplausibleStateBlobShape)
+    }
 }

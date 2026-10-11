@@ -43,6 +43,9 @@ class FakeTonexController(
     private val _slotAssignments = MutableStateFlow<Map<PresetSlot, PresetIndex>>(emptyMap())
     override val slotAssignments: StateFlow<Map<PresetSlot, PresetIndex>> = _slotAssignments
 
+    val activeSlotState = MutableStateFlow<PresetSlot?>(null)
+    override val activeSlot: StateFlow<PresetSlot?> = activeSlotState
+
     private val _parameterValues = MutableStateFlow<Map<ParameterId, Float>>(emptyMap())
     override val parameterValues: StateFlow<Map<ParameterId, Float>> = _parameterValues
 
@@ -154,6 +157,14 @@ class FakeTonexController(
      * [setActivePreset] explicitly, exactly as they would to simulate any other pedal-confirmed
      * push.
      */
+    /** Every [selectSlot] call, in order. */
+    val selectSlotCalls: MutableList<PresetSlot> = mutableListOf()
+
+    override suspend fun selectSlot(slot: PresetSlot): TonexResult<Unit> {
+        selectSlotCalls.add(slot)
+        return TonexResult.Success(Unit)
+    }
+
     override suspend fun assignPresetToSlot(slot: PresetSlot, preset: PresetIndex): TonexResult<Unit> {
         assignPresetToSlotCalls.add(slot to preset)
         return nextAssignPresetToSlotResult

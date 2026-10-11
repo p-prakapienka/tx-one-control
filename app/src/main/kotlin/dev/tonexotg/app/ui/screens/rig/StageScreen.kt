@@ -51,6 +51,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.tonexotg.app.ui.components.RigLed
+import dev.tonexotg.app.ui.components.RigSegmented
 import dev.tonexotg.app.ui.components.RotaryKnob
 import dev.tonexotg.app.ui.screens.connection.ErrorPresentation
 import dev.tonexotg.app.ui.screens.presets.AliasEditDialog
@@ -69,9 +70,12 @@ import dev.tonexotg.protocol.PresetSlot
  * The rig home screen: a big LCD for the active preset, an "Edit tone" button into
  * [RigEditorScreen], a 4×5 grid of the 20 onboard presets, and the master volume knob.
  *
- * Tap a preset pad to load it; double-tap to load it and open [RigEditorScreen]. Long-press for
- * a menu: edit, rename (local alias) and assign to footswitch slot A, B or C. The pedal's global
- * settings live on the Settings screen (the gear in the connection bar).
+ * The A/B/C switch picks the pedal's active footswitch slot (A/B mode for A and B, stomp mode for
+ * C); tapping a pad loads that preset into the active slot, like the pedal's own preset knob.
+ * Presets held by the other two slots are dimmed and can't be loaded, and the LCD arrows skip
+ * them. Double-tap a pad to load it and open [RigEditorScreen]; long-press for a menu: edit,
+ * rename (local alias) and assign to footswitch slot A, B or C. The pedal's global settings live
+ * on the Settings screen (the gear in the connection bar).
  */
 @Composable
 fun StageScreen(
@@ -100,7 +104,11 @@ fun StageScreen(
             modifier = Modifier.padding(horizontal = 12.dp),
         )
 
-        Spacer(Modifier.height(12.dp))
+        SlotSwitchRow(
+            activeSlot = uiState.activeSlot,
+            enabled = uiState.isLive && uiState.activeSlot != null,
+            onSelect = viewModel::selectSlot,
+        )
         HorizontalDivider(color = RigPanelEdge)
 
         LazyVerticalGrid(
@@ -119,6 +127,7 @@ fun StageScreen(
                 PresetTile(
                     item = item,
                     live = uiState.isLive,
+                    selectable = uiState.isSelectable(item),
                     onSelect = { viewModel.selectPreset(item.index) },
                     onEdit = {
                         // Load first (a no-op if it's already active): the editor always edits the
@@ -187,10 +196,49 @@ fun StageScreen(
     }
 }
 
+/**
+ * The footswitch slot switch: A, B or C, plus the mode it implies. Shows the slot the pedal
+ * reports; a tap asks the pedal to switch and the highlight moves when its state push confirms.
+ */
+@Composable
+private fun SlotSwitchRow(activeSlot: PresetSlot?, enabled: Boolean, onSelect: (PresetSlot) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "SLOT",
+            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Black, letterSpacing = 2.sp),
+            color = TonexOnSurfacePrimary,
+        )
+        Spacer(Modifier.width(12.dp))
+        RigSegmented(
+            options = PresetSlot.entries.map { it.name },
+            selectedIndex = activeSlot?.ordinal ?: -1,
+            onSelect = { onSelect(PresetSlot.entries[it]) },
+            enabled = enabled,
+            modifier = Modifier.testTag("stage.slotSwitch"),
+        )
+        Spacer(Modifier.weight(1f))
+        Text(
+            text = when (activeSlot) {
+                null -> ""
+                PresetSlot.C -> "STOMP MODE"
+                else -> "A/B MODE"
+            },
+            style = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.Monospace, letterSpacing = 1.sp),
+            color = TonexOnSurfaceTertiary,
+        )
+    }
+}
+
 @Composable
 private fun PresetTile(
     item: PresetListItem,
     live: Boolean,
+    selectable: Boolean,
     onSelect: () -> Unit,
     onEdit: () -> Unit,
     onRename: () -> Unit,
@@ -209,7 +257,8 @@ private fun PresetTile(
                 .fillMaxWidth()
                 // Wider than tall, so all five rows fit on more phones without scrolling.
                 .aspectRatio(1.3f)
-                .alpha(if (live) 1f else 0.5f)
+                // Held by another footswitch slot: visible (its badge says where) but not loadable.
+                .alpha(if (selectable) 1f else if (live) 0.35f else 0.5f)
                 .then(if (item.isActive) Modifier.shadow(8.dp, shape, ambientColor = RigAmber, spotColor = RigAmber) else Modifier)
                 .clip(shape)
                 .background(RigPanel)
@@ -220,7 +269,7 @@ private fun PresetTile(
                 }
                 .combinedClickableCompat(
                     onClick = {
-                        if (live) {
+                        if (selectable) {
                             val now = SystemClock.uptimeMillis()
                             if (now - lastTapMillis <= doubleTapTimeoutMillis) {
                                 lastTapMillis = 0L
@@ -268,7 +317,7 @@ private fun PresetTile(
         }
 
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-            if (live) {
+            if (selectable) {
                 DropdownMenuItem(
                     text = { Text("Edit tone") },
                     onClick = {
