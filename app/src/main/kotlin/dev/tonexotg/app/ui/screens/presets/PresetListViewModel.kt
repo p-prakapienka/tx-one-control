@@ -75,7 +75,14 @@ class PresetListViewModel(
     private val pedalPresetState = combine(
         controller.presets,
         controller.slotAssignments,
-    ) { presets, slotAssignments -> presets to slotAssignments }
+        controller.activeSlot,
+    ) { presets, slotAssignments, activeSlot -> PedalPresetState(presets, slotAssignments, activeSlot) }
+
+    private data class PedalPresetState(
+        val presets: List<PresetInfo>,
+        val slotAssignments: Map<PresetSlot, PresetIndex>,
+        val activeSlot: PresetSlot?,
+    )
 
     /** The most recent [selectPreset] failure, or `null` — folded into [uiState] below. */
     private val lastSelectError = MutableStateFlow<TonexError?>(null)
@@ -135,9 +142,17 @@ class PresetListViewModel(
         aliasesFlow,
         writeErrors,
     ) { connectionState, pedalState, activePreset, aliases, errors ->
-        val (presets, slotAssignments) = pedalState
         val (selectError, assignError) = errors
-        CorePresetState(connectionState, presets, activePreset, aliases, selectError, assignError, slotAssignments)
+        CorePresetState(
+            connectionState,
+            pedalState.presets,
+            activePreset,
+            aliases,
+            selectError,
+            assignError,
+            pedalState.slotAssignments,
+            pedalState.activeSlot,
+        )
     }
 
     val uiState: StateFlow<PresetListUiState> = combine(
@@ -160,6 +175,7 @@ class PresetListViewModel(
         val selectError: TonexError?,
         val assignError: TonexError?,
         val slotAssignments: Map<PresetSlot, PresetIndex>,
+        val activeSlot: PresetSlot?,
     )
 
     private fun buildUiState(
@@ -209,6 +225,7 @@ class PresetListViewModel(
             globalParameters = globalParameters,
             globalWriteError = globalWriteError,
             masterVolume = masterVolume,
+            activeSlot = if (isLive) core.activeSlot else null,
         )
     }
 
@@ -232,6 +249,22 @@ class PresetListViewModel(
         if (controller.connectionState.value !is ConnectionState.Ready) return
         scope.launch {
             when (val result = controller.selectPreset(index)) {
+                is TonexResult.Success -> lastSelectError.value = null
+                is TonexResult.Failure -> lastSelectError.value = result.error
+            }
+        }
+    }
+
+    /**
+     * Switches the pedal to footswitch [slot], in the matching mode (A/B mode for A and B, stomp
+     * mode for C) — [TonexController.selectSlot]. Same fire-and-forget, gate-on-Ready shape as
+     * [selectPreset]; a failure lands in [PresetListUiState.selectPresetError], and the A/B/C
+     * switch only moves once the pedal's own state push reports the new slot.
+     */
+    fun selectSlot(slot: PresetSlot) {
+        if (controller.connectionState.value !is ConnectionState.Ready) return
+        scope.launch {
+            when (val result = controller.selectSlot(slot)) {
                 is TonexResult.Success -> lastSelectError.value = null
                 is TonexResult.Failure -> lastSelectError.value = result.error
             }

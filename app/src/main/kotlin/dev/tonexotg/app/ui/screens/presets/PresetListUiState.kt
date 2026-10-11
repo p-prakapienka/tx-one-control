@@ -87,7 +87,20 @@ data class PresetListUiState(
     val globalParameters: GlobalParametersUiState? = null,
     val globalWriteError: TonexError? = null,
     val masterVolume: ParameterRow.Range? = null,
+    val activeSlot: PresetSlot? = null,
 ) {
+    /**
+     * Whether [item] can be loaded into the active slot, the way the pedal's own preset selection
+     * works: presets on the *other* two footswitch slots are skipped (18 of 20 selectable, not
+     * 20). A preset on the active slot itself stays selectable (it's simply the active one). With
+     * no live pedal or no known active slot, nothing is selectable.
+     */
+    fun isSelectable(item: PresetListItem): Boolean {
+        val slot = activeSlot ?: return false
+        if (!isLive) return false
+        return item.assignedSlots.isEmpty() || slot in item.assignedSlots
+    }
+
     val selectPresetErrorPresentation: ErrorPresentation?
         get() = selectPresetError?.toPresentation()
 
