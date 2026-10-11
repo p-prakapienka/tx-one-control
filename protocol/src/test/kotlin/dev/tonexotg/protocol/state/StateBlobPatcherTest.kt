@@ -1514,10 +1514,10 @@ class StateBlobPatcherTest {
     @Test
     fun `selectSlot against the real S22 hardware capture flips exactly the two bytes`() {
         // docs/hardware-probes/tonexprobe20260819_220308.log.txt, "S22 backup: full state blob
-        // (160 bytes)": slot B active (end-11 = 0x01), stomp-mode byte (start 19) = 0x00, A/B mode.
+        // (160 bytes)": slot A active (end-11 = 0x00), stomp-mode byte (start 19) = 0x00, A/B mode.
         val captured = capturedS22Blob()
         assertEquals(0x00.toByte(), captured[19])
-        assertEquals(0x01.toByte(), captured[captured.size - 11])
+        assertEquals(0x00.toByte(), captured[captured.size - 11])
 
         val session = SessionId.create()
         val patched = StateBlobPatcher.selectSlot(stateFor(session, captured), session, PresetSlot.C).assertSuccess()

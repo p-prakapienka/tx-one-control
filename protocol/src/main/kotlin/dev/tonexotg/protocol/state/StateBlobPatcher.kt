@@ -365,9 +365,14 @@ object StateBlobPatcher {
      * those two bytes; every slot assignment and every other byte is untouched.
      *
      * Upstream pairs these two bytes on every slot write (`usb_tonex_one_set_preset_in_slot()`)
-     * and never writes the active-slot byte alone; [patchActiveSlot]'s bare flip is ignored by a
-     * pedal in stomp mode. This is a user-initiated slot switch, the one legitimate writer of the
+     * and never writes the active-slot byte alone; [patchActiveSlot]'s bare flip produces slot/mode
+     * pairs upstream never writes. This is a slot switch, the one legitimate writer of the
      * stomp-mode byte (see [StateBlobOffsets]'s "Fields intentionally NOT modelled here").
+     *
+     * Bypass and direct monitor are left as the pedal reported them, unlike upstream's
+     * `set_preset_in_slot()`: forcing direct monitor is a side effect this module strips, and
+     * upstream only touches bypass under an optional config item (`set_ab_slots()`, which also
+     * forces A/B mode, never does). So a bypassed pedal stays bypassed across a slot switch.
      *
      * Refuses, before consuming [state], a blob whose stomp-mode byte is not already `0`/`1`
      * ([StateBlobReader.stompMode]): writing a flag over a byte that doesn't look like one would

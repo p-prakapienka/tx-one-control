@@ -165,6 +165,13 @@ interface TonexController {
      * otherwise. Implemented as a read-modify-write against the pedal's current state blob
      * (patching only the relevant slot bytes) rather than a synthesized write — see
      * [PedalState] for why that distinction is load-bearing.
+     *
+     * **A preset held by a different footswitch slot**: this flips only the active-slot byte to
+     * that slot, without the matching A/B-vs-stomp mode ([selectSlot] writes both). Upstream never
+     * writes that unpaired combination, and a pedal in stomp mode likely ignores it. UI callers
+     * must not offer such presets for selection (the pedal's own selection skips them); switch
+     * slots with [selectSlot]. The branch stays as-is for the probe's preset-change safety drill, which audits
+     * exactly this one-byte write.
      */
     suspend fun selectPreset(index: PresetIndex): TonexResult<Unit>
 

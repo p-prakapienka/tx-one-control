@@ -123,7 +123,9 @@ import dev.tonexotg.protocol.SessionId
  * explicit, user-initiated slot switch only**, the same pattern as [END_BYPASS_MODE] below. Switching
  * the pedal between footswitch slots A/B/C means switching its mode too (A/B mode for A and B, stomp
  * mode for C): upstream never flips the active-slot byte on its own (its `set_active_slot()` is
- * `__attribute__((unused))`), and a bare active-slot flip is what the pedal ignores in stomp mode.
+ * `__attribute__((unused))`). A bare active-slot flip produces slot/mode pairs upstream never writes
+ * (slot C in A/B mode, or A/B in stomp mode), and is the likely cause of presets on another
+ * footswitch not selecting on a pedal in stomp mode (reported on hardware, not yet captured).
  * The only function permitted to write it is [StateBlobPatcher.selectSlot], reachable only from
  * `DefaultTonexController.selectSlot`. Preset selection and slot assignment
  * ([StateBlobPatcher.selectPreset], [StateBlobPatcher.patchSlotAssignment],
@@ -185,7 +187,9 @@ internal object StateBlobOffsets {
      * pedal to A/B or Stomp mode. 0 here = A/B mode, 1 = stomp mode"), `usb_tonex_one_set_ab_slots()`
      * writes `0` ("force A/B (Double) mode"), and `usb_tonex_one_parse_state()` logs the byte as
      * "Stomp Mode". The S22 hardware capture (see "Endianness and anchor confirmed" above) reads
-     * `0x00` here with slot B active, consistent with A/B mode.
+     * `0x00` here with slot A active, consistent with A/B mode. **No capture in this repo yet has
+     * stomp mode on or slot B/C active**, so the C-means-stomp pairing rests on upstream's code
+     * alone until a hardware capture confirms it.
      *
      * Written only by [StateBlobPatcher.selectSlot] — see "Fields intentionally NOT modelled here".
      */

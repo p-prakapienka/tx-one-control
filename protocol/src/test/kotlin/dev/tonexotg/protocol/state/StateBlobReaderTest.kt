@@ -285,7 +285,7 @@ class StateBlobReaderTest {
 
     @Test
     fun `stompMode reads A-B mode from the real captured hardware blob`() {
-        // Byte 19 of the S22 capture is 0x00 with slot B active.
+        // Byte 19 of the S22 capture is 0x00 with slot A active (end-11 = 0x00).
         assertEquals(false, StateBlobReader.stompMode(capturedHardwareBlob).assertSuccess())
     }
 
