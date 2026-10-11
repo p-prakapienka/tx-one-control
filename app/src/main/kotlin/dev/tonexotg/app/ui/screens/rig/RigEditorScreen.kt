@@ -35,11 +35,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.tonexotg.app.ui.components.LedToggle
 import dev.tonexotg.app.ui.components.ParameterStepper
 import dev.tonexotg.app.ui.components.RigSegmented
+import dev.tonexotg.app.ui.components.RigIcon
+import dev.tonexotg.app.ui.components.RigIconButton
 import dev.tonexotg.app.ui.components.RotaryKnob
 import dev.tonexotg.app.ui.screens.parameters.CategoryUiState
 import dev.tonexotg.app.ui.screens.parameters.ParameterEditorDialogs
@@ -70,7 +73,6 @@ fun RigEditorScreen(
     viewModel: ParameterEditorViewModel,
     presetListViewModel: PresetListViewModel,
     onBack: () -> Unit,
-    onOpenClassicEditor: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -97,12 +99,10 @@ fun RigEditorScreen(
     ) {
         Column(Modifier.fillMaxSize()) {
             RigTopBar(
-                title = "Edit Tone",
+                // The preset being edited, not a generic "Edit tone" heading.
+                title = uiState.presetName.ifBlank { "Edit tone" },
                 onBack = onBack,
                 actions = {
-                    TextButton(onClick = onOpenClassicEditor, modifier = Modifier.testTag("rig.classicButton")) {
-                        Text("Classic", color = TonexOnSurfaceTertiary)
-                    }
                     TextButton(onClick = viewModel::onRevertRequested, enabled = live, modifier = Modifier.testTag("rig.revertButton")) {
                         Text("Revert", color = if (live) RigAmber else TonexOnSurfaceTertiary)
                     }
@@ -191,9 +191,13 @@ internal fun RigTopBar(title: String, onBack: (() -> Unit)?, actions: @Composabl
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (onBack != null) {
-            TextButton(onClick = onBack, modifier = Modifier.testTag("rig.backButton")) {
-                Text("‹ Back", color = TonexOnSurfacePrimary)
-            }
+            RigIconButton(
+                icon = RigIcon.BACK,
+                description = "Back",
+                onClick = onBack,
+                tint = TonexOnSurfacePrimary,
+                modifier = Modifier.testTag("rig.backButton"),
+            )
         } else {
             Spacer(Modifier.width(12.dp))
         }
@@ -201,6 +205,8 @@ internal fun RigTopBar(title: String, onBack: (() -> Unit)?, actions: @Composabl
             text = title.uppercase(),
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Black, letterSpacing = 2.sp),
             color = TonexOnSurfacePrimary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
         actions()

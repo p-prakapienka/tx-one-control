@@ -19,18 +19,12 @@ enum class TonexRoute(val route: String) {
     /** Start destination: the rig home screen — LCD, preset grid, master volume. */
     STAGE("stage"),
 
-    /** Hardware-style editor for the *currently active* preset (same no-argument rule as below). */
+    /** Hardware-style editor for the *currently active* preset (same no-argument rule as above). */
     RIG_EDITOR("rig"),
-
-    /** All 20 onboard presets as a list, with renaming and the global settings tray (S16). */
-    PRESET_LIST("presets"),
-
-    /** Quick tier + full-tier accordion for the *currently active* preset (S17). */
-    PARAMETER_EDITOR("editor"),
 
     /** Credits, licences, version info (S19). */
     ABOUT("about"),
 
-    /** Diagnostics entry point + app preferences (issue #96). */
+    /** The pedal's global settings, diagnostics and bug reporting (issue #96); opened from the gear. */
     SETTINGS("settings"),
 }
