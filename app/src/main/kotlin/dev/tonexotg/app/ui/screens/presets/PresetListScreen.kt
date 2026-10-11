@@ -590,7 +590,7 @@ private fun GlyphIcon(glyph: GlobalGlyph, tint: Color, slashed: Boolean, modifie
  * user-typed alias), with an explicit action to clear back to the pedal name.
  */
 @Composable
-private fun AliasEditDialog(
+internal fun AliasEditDialog(
     item: PresetListItem,
     onConfirm: (String) -> Unit,
     onCancel: () -> Unit,

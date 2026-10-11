@@ -149,7 +149,7 @@ internal fun buildDebugDumpIssueUri(log: ProbeLog, maxBodyChars: Int = MAX_BODY_
         .build()
 }
 
-private const val GITHUB_REPO = "wiz0floyd/Tonex-OTG"
+private const val GITHUB_REPO = "p-prakapienka/tx-one-control"
 private const val MAX_BODY_CHARS = 4000
 
 private class UsbConnectionHandles(

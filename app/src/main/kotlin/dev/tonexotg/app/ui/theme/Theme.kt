@@ -8,28 +8,46 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
 /**
- * The M3 [androidx.compose.material3.ColorScheme], wired from the D1 tokens exactly per D1 §2.1's
- * and §2.2's stated "M3 mapping" columns. Dark is not one of two branches here — D1 §6 is
- * explicit that v1 has no light theme, no toggle, and no "follow system" branch, so there is
- * exactly one [androidx.compose.material3.ColorScheme] in this module, not a light/dark pair.
+ * The app's M3 [androidx.compose.material3.ColorScheme], wired from the rig palette so every
+ * screen (Presets, Settings, About, the classic editor and the connection bar) matches the rig
+ * screens: charcoal chassis, panel greys and an amber accent. Upstream Tonex-OTG wired this from
+ * its D1 tokens (blue accent on neutral grey). Those tokens still live in `Color.kt` and the
+ * status colors below still come from them, because status colors carry meaning.
  *
- * `onSurfaceVariant` is wired to [TonexOnSurfaceSecondary] (D1's "onSurfaceVariant (strong)"
- * row) — the tertiary/muted variant and the disabled tone have no stock M3
- * [androidx.compose.material3.ColorScheme] slot of their own and live on [TonexExtendedColors]
- * instead, alongside the status colors (which D1 §7 explicitly calls out as needing a custom
- * extension since M3 has no "success"/neutral-status role).
+ * Dark only, no light scheme or "follow system" branch (D1 §6). Every role a stock component
+ * might read is set explicitly, including secondary/tertiary/containers, so no Material baseline
+ * purple leaks through.
+ *
+ * `onSurfaceVariant` is wired to [TonexOnSurfaceSecondary]; the tertiary/muted and disabled
+ * tones have no stock M3 slot and live on [TonexExtendedColors] with the status colors.
  */
 private val TonexColorScheme = darkColorScheme(
-    primary = TonexAccentPrimary,
+    primary = RigAmber,
     onPrimary = TonexOnAccent,
-    surface = TonexSurfaceBase,
+    primaryContainer = RigPanelHighest,
+    onPrimaryContainer = RigAmber,
+    secondary = RigAmber,
+    onSecondary = TonexOnAccent,
+    secondaryContainer = RigPanelHighest,
+    onSecondaryContainer = RigAmber,
+    tertiary = RigLcdText,
+    onTertiary = RigLcd,
+    tertiaryContainer = RigLcd,
+    onTertiaryContainer = RigLcdText,
+    surface = RigChassis,
     onSurface = TonexOnSurfacePrimary,
+    surfaceVariant = RigPanel,
     onSurfaceVariant = TonexOnSurfaceSecondary,
-    surfaceContainer = TonexSurfaceRaised1,
-    surfaceContainerHigh = TonexSurfaceRaised2,
-    surfaceContainerHighest = TonexSurfaceRaised3,
-    background = TonexSurfaceBase,
+    surfaceTint = RigPanelEdge,
+    surfaceContainerLowest = RigChassis,
+    surfaceContainerLow = RigPanel,
+    surfaceContainer = RigPanel,
+    surfaceContainerHigh = RigPanelHigh,
+    surfaceContainerHighest = RigPanelHighest,
+    background = RigChassis,
     onBackground = TonexOnSurfacePrimary,
+    outline = RigPanelEdge,
+    outlineVariant = RigPanelEdge,
     error = TonexStatusError,
     onError = TonexOnStatus,
 )

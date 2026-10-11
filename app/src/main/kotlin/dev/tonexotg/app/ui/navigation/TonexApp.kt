@@ -2,26 +2,25 @@ package dev.tonexotg.app.ui.navigation
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -29,15 +28,17 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import dev.tonexotg.app.session.TonexSessionHolder
 import dev.tonexotg.app.ui.screens.about.AboutScreen
+import dev.tonexotg.app.ui.screens.connection.ConnectionErrorPanel
 import dev.tonexotg.app.ui.screens.connection.ConnectionStatusBar
 import dev.tonexotg.app.ui.screens.connection.rememberConnectionStatusViewModel
 import dev.tonexotg.app.ui.screens.parameters.ParameterEditorScreen
 import dev.tonexotg.app.ui.screens.parameters.ParameterEditorViewModel
-import dev.tonexotg.app.ui.screens.presets.PresetListScreen
 import dev.tonexotg.app.ui.screens.presets.PresetListViewModel
 import dev.tonexotg.app.ui.screens.presets.rememberPresetListViewModel
+import dev.tonexotg.app.ui.screens.rig.RigEditorScreen
+import dev.tonexotg.app.ui.screens.rig.RigTopBar
+import dev.tonexotg.app.ui.screens.rig.StageScreen
 import dev.tonexotg.app.ui.screens.settings.SettingsScreen
-import dev.tonexotg.protocol.PresetIndex
 
 /**
  * The app shell (S23, issue #74; `docs/architecture/s23-ui-wiring.md` §2/§4). A plain [Column],
@@ -102,12 +103,15 @@ fun TonexApp(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .windowInsetsPadding(WindowInsets.statusBars),
+            .background(MaterialTheme.colorScheme.background)
+            .windowInsetsPadding(WindowInsets.statusBars)
+            .windowInsetsPadding(WindowInsets.navigationBars),
     ) {
         val connectionUiState by connectionStatusViewModel.uiState.collectAsState()
         ConnectionStatusBar(
             uiState = connectionUiState,
             onReconnect = connectionStatusViewModel::reconnect,
+            onSettingsClick = { navController.navigate(TonexRoute.SETTINGS.route) { launchSingleTop = true } },
         )
 
         // Doc §3.4, consequence 1: a live USB attachment with no foreground-service protection
@@ -118,32 +122,65 @@ fun TonexApp(
         val blockedReason by sessionHolder.blockedReason.collectAsState()
         blockedReason?.let { reason -> BlockedReasonBanner(reason = reason) }
 
+        // One home screen (Stage). The rig editor, Settings and About are pushed on top of it,
+        // each with a back arrow; Settings is reached from the gear in the connection bar.
         NavHost(
             navController = navController,
-            startDestination = TonexRoute.PRESET_LIST.route,
+            startDestination = TonexRoute.STAGE.route,
             modifier = Modifier.weight(1f),
         ) {
-            composable(TonexRoute.PRESET_LIST.route) {
-                PresetListRoute(
+            composable(TonexRoute.STAGE.route) {
+                StageScreen(
                     viewModel = presetListViewModel,
-                    onPresetOpened = { navController.navigate(TonexRoute.PARAMETER_EDITOR.route) },
-                    onAboutClick = { navController.navigate(TonexRoute.ABOUT.route) },
-                    onSettingsClick = { navController.navigate(TonexRoute.SETTINGS.route) },
+                    onEditTone = { navController.navigate(TonexRoute.RIG_EDITOR.route) { launchSingleTop = true } },
                 )
             }
-            composable(TonexRoute.PARAMETER_EDITOR.route) {
-                ParameterEditorScreen(
+            composable(TonexRoute.RIG_EDITOR.route) {
+                RigEditorScreen(
                     viewModel = parameterEditorViewModel,
+                    presetListViewModel = presetListViewModel,
                     onBack = { navController.popBackStack() },
                 )
             }
-            composable(TonexRoute.ABOUT.route) {
-                AboutScreen()
-            }
             composable(TonexRoute.SETTINGS.route) {
-                SettingsScreen()
+                val presetUiState by presetListViewModel.uiState.collectAsState()
+                // The global-settings rows write through PresetListViewModel's throttler; stop any
+                // buffered write when the screen goes away, as the old Presets screen did.
+                DisposableEffect(presetListViewModel) {
+                    onDispose { presetListViewModel.onGlobalParametersCleared() }
+                }
+                PushedScreen(title = "Settings", onBack = { navController.popBackStack() }) {
+                    presetUiState.globalWriteErrorPresentation?.let { presentation ->
+                        ConnectionErrorPanel(
+                            presentation = presentation,
+                            onReconnect = {},
+                            onDismiss = presetListViewModel::dismissGlobalWriteError,
+                        )
+                    }
+                    SettingsScreen(
+                        globalParameters = presetUiState.globalParameters,
+                        onGlobalRangeChange = presetListViewModel::onGlobalRangeDrag,
+                        onGlobalRangeChangeFinished = presetListViewModel::onGlobalRangeChangeFinished,
+                        onGlobalSwitchToggle = presetListViewModel::onGlobalSwitchToggle,
+                        onAboutClick = { navController.navigate(TonexRoute.ABOUT.route) { launchSingleTop = true } },
+                    )
+                }
+            }
+            composable(TonexRoute.ABOUT.route) {
+                PushedScreen(title = "About", onBack = { navController.popBackStack() }) {
+                    AboutScreen()
+                }
             }
         }
+    }
+}
+
+/** A screen pushed over Stage: the rig top bar with a back arrow, then [content]. */
+@Composable
+private fun PushedScreen(title: String, onBack: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+    Column(Modifier.fillMaxSize()) {
+        RigTopBar(title = title, onBack = onBack, actions = {})
+        content()
     }
 }
 
@@ -164,46 +201,4 @@ private fun BlockedReasonBanner(reason: String, modifier: Modifier = Modifier) {
             .background(MaterialTheme.colorScheme.errorContainer)
             .padding(horizontal = 16.dp, vertical = 8.dp),
     )
-}
-
-/**
- * The preset-list *route* composable -- owns the `Scaffold` + `TopAppBar` wrapper doc §2.3
- * requires ("keep that wrapper in the nav file so `PresetListScreen` stays directly previewable
- * and testable as-is"). [PresetListScreen] itself stays a bare, app-bar-less `Column`.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun PresetListRoute(
-    viewModel: PresetListViewModel,
-    onPresetOpened: (PresetIndex) -> Unit,
-    onAboutClick: () -> Unit,
-    onSettingsClick: () -> Unit,
-) {
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(text = "Presets", style = MaterialTheme.typography.titleLarge) },
-                actions = {
-                    TextButton(
-                        onClick = onSettingsClick,
-                        modifier = Modifier.testTag("presetList.settingsButton"),
-                    ) {
-                        Text("Settings")
-                    }
-                    TextButton(
-                        onClick = onAboutClick,
-                        modifier = Modifier.testTag("presetList.aboutButton"),
-                    ) {
-                        Text("About")
-                    }
-                },
-            )
-        },
-    ) { contentPadding ->
-        PresetListScreen(
-            viewModel = viewModel,
-            modifier = Modifier.padding(contentPadding),
-            onPresetOpened = onPresetOpened,
-        )
-    }
 }

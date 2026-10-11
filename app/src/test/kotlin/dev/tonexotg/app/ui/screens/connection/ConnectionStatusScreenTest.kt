@@ -164,7 +164,7 @@ class ConnectionStatusScreenTest {
                 ConnectionStatusBar(uiState = ConnectionUiState.NotConnected, onReconnect = {})
             }
         }
-        composeTestRule.onNodeWithText("Reconnect").assertExists()
+        composeTestRule.onNodeWithContentDescription(RECONNECT_DESCRIPTION).assertExists()
     }
 
     @Test
@@ -177,7 +177,7 @@ class ConnectionStatusScreenTest {
                 )
             }
         }
-        composeTestRule.onNodeWithText("Reconnect").assertExists()
+        composeTestRule.onNodeWithContentDescription(RECONNECT_DESCRIPTION).assertExists()
     }
 
     @Test
@@ -188,7 +188,7 @@ class ConnectionStatusScreenTest {
                 ConnectionStatusBar(uiState = ConnectionUiState.Connecting, onReconnect = {})
             }
         }
-        composeTestRule.onNodeWithText("Reconnect").assertDoesNotExist()
+        composeTestRule.onNodeWithContentDescription(RECONNECT_DESCRIPTION).assertDoesNotExist()
     }
 
     @Test
@@ -198,7 +198,7 @@ class ConnectionStatusScreenTest {
                 ConnectionStatusBar(uiState = ConnectionUiState.Connected, onReconnect = {})
             }
         }
-        composeTestRule.onNodeWithText("Reconnect").assertDoesNotExist()
+        composeTestRule.onNodeWithContentDescription(RECONNECT_DESCRIPTION).assertDoesNotExist()
     }
 
     @Test
@@ -209,7 +209,7 @@ class ConnectionStatusScreenTest {
                 ConnectionStatusBar(uiState = ConnectionUiState.NotConnected, onReconnect = { invoked = true })
             }
         }
-        composeTestRule.onNodeWithText("Reconnect").performClick()
+        composeTestRule.onNodeWithContentDescription(RECONNECT_DESCRIPTION).performClick()
         composeTestRule.waitForIdle()
         assertEquals(true, invoked)
     }
@@ -235,7 +235,7 @@ class ConnectionStatusScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithText("Reconnect").performClick()
+        composeTestRule.onNodeWithContentDescription(RECONNECT_DESCRIPTION).performClick()
         composeTestRule.waitForIdle()
 
         assertEquals(1, reconnectRequests)
@@ -298,5 +298,10 @@ class ConnectionStatusScreenTest {
         // Both the error panel and the wrapped content are simultaneously present.
         composeTestRule.onNodeWithText("Pedal Didn't Respond").assertExists()
         composeTestRule.onNodeWithText("Parameter editor content").assertExists()
+    }
+
+    private companion object {
+        /** The reconnect affordance is an icon button; this is its accessibility label. */
+        const val RECONNECT_DESCRIPTION = "Reconnect to pedal"
     }
 }
