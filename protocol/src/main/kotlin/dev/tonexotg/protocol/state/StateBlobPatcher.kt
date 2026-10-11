@@ -38,8 +38,10 @@ import dev.tonexotg.protocol.TonexResult
  *   `DIRECT_MONITOR = 1`, may force stomp/AB mode, and — when upstream's `TOGGLE_BYPASS` config is
  *   enabled — also writes `END_BYPASS_MODE` (see [StateBlobOffsets]'s "Fields intentionally NOT
  *   modelled here" for the full three-offset list, confirmed against upstream source per issue
- *   #27). None of the three offsets is even named in [StateBlobOffsets], so there is no write path
- *   here capable of touching any of them.
+ *   #27). Preset selection and slot assignment here touch none of the three. Two of those bytes
+ *   are named in [StateBlobOffsets] for separate, explicit user actions only: the bypass byte for
+ *   the global `BYPASS` parameter ([patchBypassMode]) and the stomp-mode byte for a slot switch
+ *   ([selectSlot]).
  * - **No message framing.** The `{0xb9, 0x03, 0x81, 0x06, 0x03, 0x82, ...}` wrapper that turns
  *   these bytes into an outgoing wire message is [dev.tonexotg.protocol.message]'s concern, not
  *   this module's — everything here returns plain patched bytes, ready for that layer to frame
@@ -354,6 +356,42 @@ object StateBlobPatcher {
         bytes[bytes.size - StateBlobOffsets.END_BYPASS_MODE] = bypassed.toInt().toByte()
         return TonexResult.Success(bytes)
     }
+
+    /**
+     * Makes [slot] the pedal's active footswitch slot **and** puts the pedal in the matching mode,
+     * in one patched copy: the active-slot byte ([StateBlobOffsets.END_CURRENT_SLOT]) becomes
+     * [slot]'s ordinal and the stomp-mode byte ([StateBlobOffsets.START_STOMP_MODE]) becomes `1` for
+     * [PresetSlot.C] (stomp mode) or `0` for [PresetSlot.A]/[PresetSlot.B] (A/B mode). Exactly
+     * those two bytes; every slot assignment and every other byte is untouched.
+     *
+     * Upstream pairs these two bytes on every slot write (`usb_tonex_one_set_preset_in_slot()`)
+     * and never writes the active-slot byte alone; [patchActiveSlot]'s bare flip is ignored by a
+     * pedal in stomp mode. This is a user-initiated slot switch, the one legitimate writer of the
+     * stomp-mode byte (see [StateBlobOffsets]'s "Fields intentionally NOT modelled here").
+     *
+     * Refuses, before consuming [state], a blob whose stomp-mode byte is not already `0`/`1`
+     * ([StateBlobReader.stompMode]): writing a flag over a byte that doesn't look like one would
+     * mean the offset has drifted for this firmware.
+     *
+     * @param state a blob read from the pedal during [currentSession] — same freshness/single-use
+     *   contract as [patchSlotAssignment]; see that function's KDoc.
+     * @return the patched bytes, or a [TonexResult.Failure]; see [prepareForPatch].
+     */
+    fun selectSlot(state: PedalState, currentSession: SessionId, slot: PresetSlot): TonexResult<ByteArray> {
+        val currentMode = StateBlobReader.stompMode(state.copyOfBytes())
+        if (currentMode is TonexResult.Failure) return currentMode
+
+        val prepared = prepareForPatch(state, currentSession, preset = null)
+        if (prepared is TonexResult.Failure) return prepared
+        val bytes = (prepared as TonexResult.Success).value
+
+        bytes[bytes.size - StateBlobOffsets.END_CURRENT_SLOT] = slot.ordinal.toByte()
+        bytes[StateBlobOffsets.START_STOMP_MODE] = stompModeFor(slot)
+        return TonexResult.Success(bytes)
+    }
+
+    /** The stomp-mode byte value that goes with [slot]: `1` (stomp mode) for C, `0` (A/B mode) otherwise. */
+    internal fun stompModeFor(slot: PresetSlot): Byte = if (slot == PresetSlot.C) 1 else 0
 
     /**
      * Writes [value] into [bytes] at [index]..[index]+3 as a 4-byte little-endian IEEE-754 float —

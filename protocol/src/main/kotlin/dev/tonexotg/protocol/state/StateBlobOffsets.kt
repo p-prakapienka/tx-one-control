@@ -114,10 +114,21 @@ import dev.tonexotg.protocol.SessionId
  *   reselect, forced to `0` otherwise. Easy to miss because it is not adjacent to the other two in
  *   the `#define` list — it sits between [END_CURRENT_SLOT] (`11`) and `END_SLOT_C_PRESET` (`14`).
  *
- * `TONEX_STATE_OFFSET_START_STOMP_MODE` and `TONEX_STATE_OFFSET_END_DIRECT_MONITOR` remain
- * entirely unmodelled: per this project's mandate (see [PedalState] and issue #12), both are side
- * effects to strip, not to port, so this module never writes either and does not even name their
- * offsets as constants here — there is nothing in this file capable of producing that write. An
+ * `TONEX_STATE_OFFSET_END_DIRECT_MONITOR` remains entirely unmodelled: per this project's mandate
+ * (see [PedalState] and issue #12), it is a side effect to strip, not to port, so this module never
+ * writes it and does not even name its offset as a constant here — there is nothing in this file
+ * capable of producing that write.
+ *
+ * **`TONEX_STATE_OFFSET_START_STOMP_MODE` is now modelled, as [START_STOMP_MODE] — for an
+ * explicit, user-initiated slot switch only**, the same pattern as [END_BYPASS_MODE] below. Switching
+ * the pedal between footswitch slots A/B/C means switching its mode too (A/B mode for A and B, stomp
+ * mode for C): upstream never flips the active-slot byte on its own (its `set_active_slot()` is
+ * `__attribute__((unused))`), and a bare active-slot flip is what the pedal ignores in stomp mode.
+ * The only function permitted to write it is [StateBlobPatcher.selectSlot], reachable only from
+ * `DefaultTonexController.selectSlot`. Preset selection and slot assignment
+ * ([StateBlobPatcher.selectPreset], [StateBlobPatcher.patchSlotAssignment],
+ * [StateBlobPatcher.restoreSlotAssignments]) still never touch it, and `StateBlobPatcherTest`
+ * asserts that. An
  * earlier version of this KDoc named only these two, plus `END_BYPASS_MODE`, as a single group of
  * three; that was a documentation completeness gap, not a code gap — see
  * [dev.tonexotg.protocol.diagnostics.PresetChangeAudit], whose exhaustive full-blob diff would
@@ -163,6 +174,22 @@ internal object StateBlobOffsets {
 
     /** Start-relative offset of the global cab-sim-bypass flag byte (`0`/`1`). */
     const val START_CAB_BYPASS: Int = 20
+
+    /**
+     * Start-relative offset of the footswitch-mode flag byte: `0` = A/B mode (the footswitch
+     * toggles slots A and B), `1` = stomp mode (slot C, footswitch as on/off).
+     *
+     * Pinned commit `usb_tonex_one.c` line 106: `#define TONEX_STATE_OFFSET_START_STOMP_MODE 19
+     * // 0x00 - off, 0x01 - on`. The A/B-vs-C meaning is upstream's own, in both directions:
+     * `usb_tonex_one_set_preset_in_slot()` writes `0` for slots A/B and `1` for slot C ("force
+     * pedal to A/B or Stomp mode. 0 here = A/B mode, 1 = stomp mode"), `usb_tonex_one_set_ab_slots()`
+     * writes `0` ("force A/B (Double) mode"), and `usb_tonex_one_parse_state()` logs the byte as
+     * "Stomp Mode". The S22 hardware capture (see "Endianness and anchor confirmed" above) reads
+     * `0x00` here with slot B active, consistent with A/B mode.
+     *
+     * Written only by [StateBlobPatcher.selectSlot] — see "Fields intentionally NOT modelled here".
+     */
+    const val START_STOMP_MODE: Int = 19
 
     /** End-relative offset of the global tempo-source flag byte (`0` = GLOBAL, `1` = PRESET). */
     const val END_TEMPO_SOURCE: Int = 6

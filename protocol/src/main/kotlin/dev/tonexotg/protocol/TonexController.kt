@@ -119,6 +119,13 @@ interface TonexController {
     val slotAssignments: StateFlow<Map<PresetSlot, PresetIndex>>
 
     /**
+     * The pedal's active footswitch slot (A/B/C), or `null` before [ConnectionState.Ready]. Push-
+     * driven like [slotAssignments]: it changes when the pedal reports a new state (after
+     * [selectSlot], or a footswitch press), never optimistically.
+     */
+    val activeSlot: StateFlow<PresetSlot?>
+
+    /**
      * The last known value of every parameter belonging to the active preset, plus the 7
      * globals, keyed by [ParameterId]. An id absent from this map means its value is not yet
      * known (e.g. before [ConnectionState.Ready]) — absence is not the same as a value of zero.
@@ -188,6 +195,21 @@ interface TonexController {
      * distinction is load-bearing.
      */
     suspend fun assignPresetToSlot(slot: PresetSlot, preset: PresetIndex): TonexResult<Unit>
+
+    /**
+     * Makes [slot] the pedal's active footswitch slot and switches the pedal into the matching
+     * mode: A/B mode for [PresetSlot.A] and [PresetSlot.B], stomp mode for [PresetSlot.C]. The
+     * active preset becomes whatever [slot] holds; no slot assignment changes.
+     *
+     * A no-op ([TonexResult.Success], nothing written) when [slot] is already active and the pedal
+     * is already in the matching mode.
+     *
+     * Requires [ConnectionState.Ready]; fails with [TonexError.ProtocolStateViolation]
+     * otherwise. Read-modify-write against a fresh state read, the same [PedalState] discipline as
+     * [selectPreset]. Fails with [TonexError.ImplausibleStateBlobShape], writing nothing, if the
+     * pedal's stomp-mode byte doesn't hold a `0`/`1` flag.
+     */
+    suspend fun selectSlot(slot: PresetSlot): TonexResult<Unit>
 
     /**
      * Writes [value] for parameter [id] on the pedal, using the single-parameter write path

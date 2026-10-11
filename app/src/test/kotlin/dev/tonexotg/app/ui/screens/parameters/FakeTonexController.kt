@@ -41,6 +41,9 @@ class FakeTonexController : TonexController {
     private val _slotAssignments = MutableStateFlow<Map<PresetSlot, PresetIndex>>(emptyMap())
     override val slotAssignments: StateFlow<Map<PresetSlot, PresetIndex>> = _slotAssignments
 
+    val activeSlotState = MutableStateFlow<PresetSlot?>(null)
+    override val activeSlot: StateFlow<PresetSlot?> = activeSlotState
+
     private val _parameterValues = MutableStateFlow<Map<ParameterId, Float>>(emptyMap())
     override val parameterValues: StateFlow<Map<ParameterId, Float>> = _parameterValues
 
@@ -140,4 +143,6 @@ class FakeTonexController : TonexController {
     fun seedPresets(presets: List<PresetInfo>) {
         _presets.value = presets
     }
+
+    override suspend fun selectSlot(slot: PresetSlot): TonexResult<Unit> = TonexResult.Success(Unit)
 }

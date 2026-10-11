@@ -184,11 +184,14 @@ fun plausibleBlob(
     a: Int = 0,
     b: Int = 1,
     c: Int = 2,
+    stompMode: Int? = null,
 ): ByteArray {
     require(size >= StateBlobOffsets.MIN_PLAUSIBLE_BLOB_SIZE) {
         "plausibleBlob: size $size is below StateBlobOffsets.MIN_PLAUSIBLE_BLOB_SIZE"
     }
     val bytes = ByteArray(size) { i -> ((i * 7 + 13) % 256).toByte() }
+    // Left at the filler value unless asked for: only selectSlot reads this byte.
+    if (stompMode != null) bytes[StateBlobOffsets.START_STOMP_MODE] = stompMode.toByte()
     bytes[size - StateBlobOffsets.END_SLOT_A_PRESET] = a.toByte()
     bytes[size - StateBlobOffsets.END_SLOT_B_PRESET] = b.toByte()
     bytes[size - StateBlobOffsets.END_SLOT_C_PRESET] = c.toByte()
