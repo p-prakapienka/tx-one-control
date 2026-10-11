@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -97,7 +98,8 @@ fun StageScreen(
 
         Spacer(Modifier.height(12.dp))
         EditToneButton(enabled = uiState.isLive, onClick = onEditTone)
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(8.dp))
+        HorizontalDivider(color = RigPanelEdge)
 
         LazyVerticalGrid(
             columns = GridCells.Fixed(4),
@@ -105,7 +107,9 @@ fun StageScreen(
                 .weight(1f)
                 .fillMaxWidth()
                 .testTag("stage.presetGrid"),
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+            // The grid scrolls when the 20 tiles don't fit. The divider above and this top
+            // padding keep a partly scrolled row visibly inside the grid, not under the button.
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -169,9 +173,8 @@ private fun EditToneButton(enabled: Boolean, onClick: () -> Unit) {
         modifier = Modifier
             .padding(horizontal = 12.dp)
             .fillMaxWidth()
-            .heightIn(min = 56.dp)
+            .heightIn(min = 52.dp)
             .alpha(if (enabled) 1f else 0.4f)
-            .then(if (enabled) Modifier.shadow(10.dp, shape, ambientColor = RigAmber, spotColor = RigAmber) else Modifier)
             .clip(shape)
             .background(RigAmber)
             .combinedClickableCompat(onClick = onClick, onLongClick = null, role = Role.Button, enabled = enabled)
@@ -199,7 +202,8 @@ private fun PresetTile(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(1.05f)
+                // Wider than tall, so all five rows fit on more phones without scrolling.
+                .aspectRatio(1.3f)
                 .alpha(if (enabled) 1f else 0.5f)
                 .then(if (item.isActive) Modifier.shadow(8.dp, shape, ambientColor = RigAmber, spotColor = RigAmber) else Modifier)
                 .clip(shape)
@@ -225,7 +229,17 @@ private fun PresetTile(
                     color = if (item.isActive) RigAmber else TonexOnSurfaceTertiary,
                     modifier = Modifier.weight(1f),
                 )
-                RigLed(lit = item.isActive, size = 7.dp)
+                // Footswitch badges share the header row; below the name they were clipped
+                // whenever the name took two lines. The LED steps aside for them (the active tile
+                // still has its amber border and number).
+                if (item.assignedSlots.isNotEmpty()) {
+                    item.assignedSlots.sortedBy { it.ordinal }.forEach { slot ->
+                        Spacer(Modifier.width(2.dp))
+                        SlotBadge(slot, size = 14.dp)
+                    }
+                } else {
+                    RigLed(lit = item.isActive, size = 7.dp)
+                }
             }
             Spacer(Modifier.weight(1f))
             Text(
@@ -235,15 +249,6 @@ private fun PresetTile(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (item.assignedSlots.isNotEmpty()) {
-                Spacer(Modifier.height(4.dp))
-                Row {
-                    item.assignedSlots.sortedBy { it.ordinal }.forEach { slot ->
-                        SlotBadge(slot)
-                        Spacer(Modifier.width(3.dp))
-                    }
-                }
-            }
         }
 
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {

@@ -37,6 +37,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.tonexotg.app.ui.components.RigLed
@@ -64,17 +65,17 @@ internal fun PresetSlot.badgeColor(): Color = when (this) {
 
 /** A small rounded "A"/"B"/"C" badge. */
 @Composable
-internal fun SlotBadge(slot: PresetSlot, modifier: Modifier = Modifier) {
+internal fun SlotBadge(slot: PresetSlot, modifier: Modifier = Modifier, size: Dp = 18.dp) {
     Box(
         modifier = modifier
-            .size(18.dp)
+            .size(size)
             .clip(RoundedCornerShape(5.dp))
             .background(slot.badgeColor()),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = slot.name,
-            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Black, fontSize = 11.sp),
+            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Black, fontSize = if (size < 18.dp) 9.sp else 11.sp),
             color = Color.Black,
         )
     }
