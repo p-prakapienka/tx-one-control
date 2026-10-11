@@ -30,7 +30,9 @@ class DefaultTonexControllerSelectSlotTest {
 
     @Test
     fun `A to C from A-B mode writes slot 2 and stomp mode 1, every other byte unchanged`() = runTest {
-        val (controller, fake) = ready(activeSlot = PresetSlot.A)
+        // Same slot presets at connect and at the re-read: otherwise the re-read itself looks like
+        // an external preset change and triggers a snapshot read after the write.
+        val (controller, fake) = ready(activeSlot = PresetSlot.A, a = 5, b = 10, c = 15)
 
         val reread = plausibleBlob(activeSlot = PresetSlot.A, a = 5, b = 10, c = 15, stompMode = 0)
         val written = selectSlotAgainst(controller, fake, PresetSlot.C, reread)
@@ -40,7 +42,7 @@ class DefaultTonexControllerSelectSlotTest {
 
     @Test
     fun `C to B from stomp mode writes slot 1 and stomp mode 0`() = runTest {
-        val (controller, fake) = ready(activeSlot = PresetSlot.C)
+        val (controller, fake) = ready(activeSlot = PresetSlot.C, a = 5, b = 10, c = 15)
 
         val reread = plausibleBlob(activeSlot = PresetSlot.C, a = 5, b = 10, c = 15, stompMode = 1)
         val written = selectSlotAgainst(controller, fake, PresetSlot.B, reread)
