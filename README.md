@@ -50,7 +50,9 @@ registered trademark of IK Multimedia Production Srl.
 - Android 8.0 (API 26) or newer
 - A USB-OTG cable/adapter matching your phone's port (USB-C or micro-USB) to
   the ToneX One's USB-C port
-- A ToneX One pedal
+- A ToneX One pedal. **No separate power supply is needed:** the phone
+  powers the pedal over the USB-OTG cable. Expect some extra drain on the
+  phone's battery while it does.
 
 ## Download and install
 
@@ -68,9 +70,9 @@ want consecutive CI builds to install over each other without uninstalling.
 1. Download and unzip the APK artifact from the CI run you want.
 2. Install it (you may need to allow "install unknown apps" for your
    browser/file manager the first time).
-3. Connect your phone to the ToneX One with a USB-OTG cable, power on the
-   pedal, and open the app — grant the USB permission prompt when Android
-   asks.
+3. Connect your phone to the ToneX One with a USB-OTG cable and open the
+   app — grant the USB permission prompt when Android asks. The pedal powers
+   up from the phone over the cable, so you don't need its own power supply.
 
 ## Building from source
 
