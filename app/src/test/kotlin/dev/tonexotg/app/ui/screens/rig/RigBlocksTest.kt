@@ -1,5 +1,6 @@
 package dev.tonexotg.app.ui.screens.rig
 
+import dev.tonexotg.app.ui.components.KnobTaper
 import dev.tonexotg.app.ui.screens.parameters.CategoryUiState
 import dev.tonexotg.app.ui.screens.parameters.ModelSelectorUiState
 import dev.tonexotg.app.ui.screens.parameters.ParameterCatalog
@@ -86,5 +87,37 @@ class RigBlocksTest {
         assertEquals("Bass Freq", shortParameterLabel(ParameterId(12), "fallback"))
         assertEquals("Gain", shortParameterLabel(ParameterId(20), "fallback"))
         assertEquals("Cabinet Unknown", shortParameterLabel(ParameterId(23), "Cabinet Unknown"))
+    }
+
+    private fun rangeRow(index: Int, lo: Float, hi: Float, unit: String) =
+        ParameterRow.Range(ParameterId(index), "r$index", "R$index", lo, lo..hi, "", 1, unit)
+
+    @Test
+    fun `log taper puts the geometric mean at 12 o'clock`() {
+        val rate = 0.1f..10f
+        assertEquals(1f, KnobTaper.LOGARITHMIC.valueAt(0.5f, rate), 1e-4f)
+        assertEquals(0.5f, KnobTaper.LOGARITHMIC.fractionOf(1f, rate), 1e-4f)
+        assertEquals(0.1f, KnobTaper.LOGARITHMIC.valueAt(0f, rate), 1e-6f)
+        assertEquals(10f, KnobTaper.LOGARITHMIC.valueAt(1f, rate), 1e-4f)
+        // Round trip across the travel.
+        for (f in listOf(0.1f, 0.25f, 0.8f)) {
+            assertEquals(f, KnobTaper.LOGARITHMIC.fractionOf(KnobTaper.LOGARITHMIC.valueAt(f, rate), rate), 1e-4f)
+        }
+    }
+
+    @Test
+    fun `linear taper is a straight map and clamps out-of-range values`() {
+        assertEquals(5f, KnobTaper.LINEAR.valueAt(0.5f, 0f..10f), 1e-6f)
+        assertEquals(1f, KnobTaper.LINEAR.fractionOf(42f, 0f..10f), 1e-6f)
+        assertEquals(0f, KnobTaper.LINEAR.fractionOf(-1f, 0f..10f), 1e-6f)
+    }
+
+    @Test
+    fun `log taper only for wide frequency ranges`() {
+        assertEquals(KnobTaper.LOGARITHMIC, knobTaperFor(rangeRow(79, 0.1f, 10f, "Hz"))) // phaser rate
+        assertEquals(KnobTaper.LOGARITHMIC, knobTaperFor(rangeRow(15, 150f, 5000f, "Hz"))) // EQ mid freq
+        assertEquals(KnobTaper.LINEAR, knobTaperFor(rangeRow(17, 1000f, 4000f, "Hz"))) // EQ treble freq
+        assertEquals(KnobTaper.LINEAR, knobTaperFor(rangeRow(20, 0f, 10f, ""))) // gain
+        assertEquals(KnobTaper.LINEAR, knobTaperFor(rangeRow(99, 0f, 1000f, "ms"))) // delay time
     }
 }

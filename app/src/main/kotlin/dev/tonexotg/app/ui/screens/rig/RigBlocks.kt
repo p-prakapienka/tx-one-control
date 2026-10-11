@@ -1,5 +1,6 @@
 package dev.tonexotg.app.ui.screens.rig
 
+import dev.tonexotg.app.ui.components.KnobTaper
 import dev.tonexotg.app.ui.screens.parameters.CategoryUiState
 import dev.tonexotg.app.ui.screens.parameters.ParameterRow
 import dev.tonexotg.protocol.ParameterId
@@ -124,3 +125,17 @@ internal fun shortParameterLabel(id: ParameterId, fallback: String): String {
         wordOverrides[word] ?: word.lowercase(Locale.US).replaceFirstChar { it.titlecase(Locale.US) }
     }
 }
+
+/**
+ * Logarithmic travel for frequency-like knobs whose range spans at least [LOG_TAPER_MIN_RATIO]x
+ * (the four modulation rates, 0.1–10 Hz, with 1 Hz at 12 o'clock; the EQ mid frequency,
+ * 150–5000 Hz), linear for everything else, including narrow frequency ranges like the
+ * 1–4 kHz treble frequency.
+ */
+internal fun knobTaperFor(row: ParameterRow.Range): KnobTaper {
+    val lo = row.range.start
+    val hi = row.range.endInclusive
+    return if (row.unit == "Hz" && lo > 0f && hi / lo >= LOG_TAPER_MIN_RATIO) KnobTaper.LOGARITHMIC else KnobTaper.LINEAR
+}
+
+private const val LOG_TAPER_MIN_RATIO = 20f

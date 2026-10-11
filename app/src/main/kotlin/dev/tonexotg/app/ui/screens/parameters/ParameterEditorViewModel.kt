@@ -248,6 +248,19 @@ class ParameterEditorViewModel(
     /** One model-selector chip tap (D3 §2.3) — an ordinary immediate write, same as any other discrete change. */
     fun onModelSelect(id: ParameterId, modelIndex: Int) = onDiscreteChange(id, modelIndex.toFloat())
 
+    /**
+     * Double-tap on a rig knob: one immediate write of [id]'s registry default
+     * ([dev.tonexotg.protocol.ParameterSpec.default]), clamped like every other write here.
+     *
+     * Those defaults are the upstream parameter table's initial values, not IK's factory
+     * settings: EQ and amp knobs reset to centre, but mix/level/depth knobs reset to 0. The write
+     * is undoable through Revert like any other edit.
+     */
+    fun onRangeReset(id: ParameterId) {
+        val spec = ParameterRegistry.byIndex(id.index) ?: return
+        onDiscreteChange(id, spec.default)
+    }
+
     /** Opens the numeric-entry sheet (D3 §3.1) for [id] — must be a `RANGE` parameter. */
     fun onNumericEntryOpen(id: ParameterId) {
         _numericEntryTargetId.value = id

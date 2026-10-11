@@ -307,6 +307,8 @@ private fun BlockPanel(state: RigBlockState, viewModel: ParameterEditorViewModel
                         onValueChange = { viewModel.onRangeDrag(row.id, it) },
                         onValueChangeFinished = { viewModel.onRangeDragEnd(row.id) },
                         onValueTextClick = { viewModel.onNumericEntryOpen(row.id) },
+                        onDoubleTap = { viewModel.onRangeReset(row.id) },
+                        taper = knobTaperFor(row),
                         enabled = enabled,
                         modifier = Modifier
                             .weight(1f)

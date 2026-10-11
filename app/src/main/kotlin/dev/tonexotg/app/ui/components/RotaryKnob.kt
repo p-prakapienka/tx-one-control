@@ -57,6 +57,8 @@ import dev.tonexotg.app.ui.theme.TonexOnSurfaceTertiary
 import dev.tonexotg.app.ui.theme.TonexTheme
 import kotlin.math.PI
 import kotlin.math.cos
+import kotlin.math.ln
+import kotlin.math.pow
 import kotlin.math.sin
 
 /** The knob travels 270° — from 7:30 (135° in Compose's clockwise-from-3-o'clock convention) to 4:30. */
@@ -64,13 +66,51 @@ private const val START_ANGLE = 135f
 private const val SWEEP_ANGLE = 270f
 
 /**
+ * How knob rotation maps onto the value range.
+ *
+ * [LOGARITHMIC] is the synth-filter taper: equal rotation multiplies the value by an equal
+ * factor, so the geometric mean of the range sits at 12 o'clock. A 0.1–10 Hz rate puts 1 Hz at
+ * the centre and gives the slow end (where phaser and flanger sweeps live) most of the travel. It
+ * needs a range that is strictly positive.
+ */
+enum class KnobTaper {
+    LINEAR,
+    LOGARITHMIC,
+    ;
+
+    /** Value at rotation [fraction] (0..1) of [range]. */
+    fun valueAt(fraction: Float, range: ClosedFloatingPointRange<Float>): Float {
+        val f = fraction.coerceIn(0f, 1f)
+        val lo = range.start
+        val hi = range.endInclusive
+        return when {
+            this == LOGARITHMIC && lo > 0f && hi > lo -> (lo * (hi / lo).pow(f)).coerceIn(lo, hi)
+            else -> lo + (hi - lo) * f
+        }
+    }
+
+    /** Rotation fraction (0..1) at which [value] sits in [range]. Inverse of [valueAt]. */
+    fun fractionOf(value: Float, range: ClosedFloatingPointRange<Float>): Float {
+        val lo = range.start
+        val hi = range.endInclusive
+        if (hi <= lo) return 0f
+        val v = value.coerceIn(lo, hi)
+        return when {
+            this == LOGARITHMIC && lo > 0f -> (ln(v / lo) / ln(hi / lo))
+            else -> (v - lo) / (hi - lo)
+        }.coerceIn(0f, 1f)
+    }
+}
+
+/**
  * A hardware-style rotary knob for a `RANGE` parameter, used by the rig screens.
  *
  * Interaction:
  * - **Drag** up or right to increase, down or left to decrease. A full sweep of the range takes
  *   about [dragTravel] of finger travel, so small moves give fine control.
- * - **Double-tap** the knob (or tap its value readout) to open precise numeric entry via
- *   [onValueTextClick], if supplied.
+ * - **Double-tap** the knob to call [onDoubleTap] (the rig editor resets the parameter).
+ * - **Tap the value readout** to open precise numeric entry via [onValueTextClick], if supplied.
+ * - [taper] picks linear or logarithmic travel (see [KnobTaper]).
  *
  * Same write contract as [ParameterControl]: [onValueChange] fires on every drag step,
  * [onValueChangeFinished] exactly once when the gesture ends (or is cancelled). Callers must
@@ -93,23 +133,24 @@ fun RotaryKnob(
     bipolar: Boolean = valueRange.start < 0f && valueRange.endInclusive > 0f,
     dragTravel: Dp = 240.dp,
     onValueTextClick: (() -> Unit)? = null,
+    onDoubleTap: (() -> Unit)? = null,
+    taper: KnobTaper = KnobTaper.LINEAR,
 ) {
     val haptics = LocalHapticFeedback.current
     val travelPx = with(LocalDensity.current) { dragTravel.toPx() }
-    val span = (valueRange.endInclusive - valueRange.start).takeIf { it > 0f } ?: 1f
-
     var dragging by remember { mutableStateOf(false) }
+    // The drag works in rotation space (0..1), so linear and logarithmic tapers share one gesture.
+    var localFraction by remember { mutableFloatStateOf(taper.fractionOf(value, valueRange)) }
     var localValue by remember { mutableFloatStateOf(value) }
-    val shownValue = if (dragging) localValue else value
 
     val latestValue by rememberUpdatedState(value)
     val latestOnChange by rememberUpdatedState(onValueChange)
     val latestOnFinished by rememberUpdatedState(onValueChangeFinished)
-    val latestOnTextClick by rememberUpdatedState(onValueTextClick)
+    val latestOnDoubleTap by rememberUpdatedState(onDoubleTap)
     // Read through updated state so a mid-drag bounds change (e.g. a self-widening VIR parameter)
     // doesn't restart the gesture detector and strand the drag without an onDragEnd.
     val latestRange by rememberUpdatedState(valueRange)
-    val latestSpan by rememberUpdatedState(span)
+    val latestTaper by rememberUpdatedState(taper)
 
     Column(
         modifier = modifier
@@ -148,6 +189,7 @@ fun RotaryKnob(
                     detectDragGestures(
                         onDragStart = {
                             localValue = latestValue
+                            localFraction = latestTaper.fractionOf(latestValue, latestRange)
                             dragging = true
                         },
                         onDragEnd = {
@@ -162,9 +204,9 @@ fun RotaryKnob(
                         change.consume()
                         // Right and up both increase; screen y grows downward, hence the minus.
                         val range = latestRange
-                        val delta = (dragAmount.x - dragAmount.y) / travelPx * latestSpan
+                        localFraction = (localFraction + (dragAmount.x - dragAmount.y) / travelPx).coerceIn(0f, 1f)
                         val previous = localValue
-                        val next = (previous + delta).coerceIn(range)
+                        val next = latestTaper.valueAt(localFraction, range)
                         if (next != previous) {
                             localValue = next
                             latestOnChange(next)
@@ -175,12 +217,12 @@ fun RotaryKnob(
                 }
                 .pointerInput(enabled) {
                     if (!enabled) return@pointerInput
-                    detectTapGestures(onDoubleTap = { latestOnTextClick?.invoke() })
+                    detectTapGestures(onDoubleTap = { latestOnDoubleTap?.invoke() })
                 },
             contentAlignment = Alignment.Center,
         ) {
             KnobFace(
-                fraction = ((shownValue - valueRange.start) / span).coerceIn(0f, 1f),
+                fraction = if (dragging) localFraction else taper.fractionOf(value, valueRange),
                 bipolar = bipolar,
                 active = dragging,
                 modifier = Modifier.size(knobSize),
